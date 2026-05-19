@@ -29,7 +29,12 @@ from lightning.pytorch.loggers import TensorBoardLogger
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from datasets import BDB2024_Dataset, load_datasets
+from datasets import (
+    BDB2024_Dataset,
+    TRANSFORMER_FEATURES,
+    ZOO_INTERACTION_FEATURE_COUNT,
+    load_datasets,
+)
 from models import LitModel
 
 MODELS_PATH = Path("models")
@@ -223,6 +228,7 @@ def train_model(
             print(f"Resuming training from best checkpoint: {existing_ckpt}")
 
     # initialize model
+    feature_len = len(TRANSFORMER_FEATURES) if model_type == "transformer" else ZOO_INTERACTION_FEATURE_COUNT
     if existing_ckpt is not None:
         lit_model = LitModel.load_from_checkpoint(existing_ckpt)
         curr_epoch, _ = get_epoch_val_loss_from_ckpt(existing_ckpt)
@@ -232,6 +238,7 @@ def train_model(
             batch_size=batch_size,
             model_dim=model_dim,
             num_layers=num_layers,
+            feature_len=feature_len,
             learning_rate=learning_rate,
             dropout=dropout,
         )

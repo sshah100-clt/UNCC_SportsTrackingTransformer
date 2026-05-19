@@ -45,6 +45,13 @@ random.seed(42)
 PREPPED_DATA_DIR = Path("data/split_prepped_data/")
 DATASET_DIR = Path("data/datasets/")
 
+TRANSFORMER_FEATURES = [
+    "x_rel", "y_rel", "vx", "vy", "ax", "ay",
+    "ox", "oy", "delta_ox", "delta_oy",
+    "side", "is_ball_carrier",
+]
+ZOO_INTERACTION_FEATURE_COUNT = 28
+
 
 class BDB2024_Dataset(Dataset):
     """
@@ -83,6 +90,7 @@ class BDB2024_Dataset(Dataset):
             raise ValueError("model_type must be either 'transformer' or 'zoo'")
 
         self.model_type = model_type
+        self.feature_len = len(TRANSFORMER_FEATURES) if model_type == "transformer" else ZOO_INTERACTION_FEATURE_COUNT
         # Sort keys to ensure deterministic ordering across runs
         self.keys = sorted(feature_df.select(["gameId", "playId", "mirrored", "frameId"]).unique().rows())
 
@@ -203,21 +211,7 @@ class BDB2024_Dataset(Dataset):
         Raises:
             AssertionError: If the output shape is not as expected
         """
-        # Features fed to the Transformer model (per player):
-        # - x_rel, y_rel: Player position relative to ball carrier (in yards)
-        #                 Using relative positions makes the model learn spatial relationships
-        #                 (e.g., "defender 5 yards ahead") rather than absolute field positions
-        # - vx, vy: Player velocity in x and y directions (yards/second)
-        #           Velocity helps predict where players will be, not just where they are now
-        # - side: Offensive (+1) or Defensive (-1) team indicator
-        #         Helps model learn different roles (e.g., blockers vs. tacklers)
-        # - is_ball_carrier: Binary flag (1 = has ball, 0 = doesn't)
-        #                    Critical for identifying the target player being tackled
-        #
-        # Shape: (22 players, 6 features)
-        # The Transformer's self-attention mechanism will learn to focus on relevant players
-        # (e.g., nearby defenders, blocking assignments) automatically during training.
-        features = ["x_rel", "y_rel", "vx", "vy", "side", "is_ball_carrier"]
+        features = TRANSFORMER_FEATURES
         x = frame_df[features].to_numpy(dtype=np.float32)
         assert x.shape == (22, len(features)), f"Expected shape (22, {len(features)}), got {x.shape}"
         return x
@@ -240,57 +234,64 @@ class BDB2024_Dataset(Dataset):
         off_plyrs = frame_df[(frame_df["side"] == 1) & (frame_df["is_ball_carrier"] == 0)]
         def_plyrs = frame_df[frame_df["side"] == -1]
 
-        ball_carr_mvmt_feats = ball_carrier[["x_rel", "y_rel", "vx", "vy"]].to_numpy(dtype=np.float32).squeeze()
-        off_mvmt_feats = off_plyrs[["x_rel", "y_rel", "vx", "vy"]].to_numpy(dtype=np.float32)
-        def_mvmt_feats = def_plyrs[["x_rel", "y_rel", "vx", "vy"]].to_numpy(dtype=np.float32)
+        # Position & velocity (original features)
+        ball_carr_mvmt = ball_carrier[["x_rel", "y_rel", "vx", "vy"]].to_numpy(dtype=np.float32).squeeze()
+        off_mvmt = off_plyrs[["x_rel", "y_rel", "vx", "vy"]].to_numpy(dtype=np.float32)
+        def_mvmt = def_plyrs[["x_rel", "y_rel", "vx", "vy"]].to_numpy(dtype=np.float32)
 
-        # Zoo interaction features
+        # Acceleration (temporal)
+        ball_carr_accel = ball_carrier[["ax", "ay"]].to_numpy(dtype=np.float32).squeeze()
+        off_accel = off_plyrs[["ax", "ay"]].to_numpy(dtype=np.float32)
+        def_accel = def_plyrs[["ax", "ay"]].to_numpy(dtype=np.float32)
+
+        # Orientation (static)
+        ball_carr_orient = ball_carrier[["ox", "oy"]].to_numpy(dtype=np.float32).squeeze()
+        off_orient = off_plyrs[["ox", "oy"]].to_numpy(dtype=np.float32)
+        def_orient = def_plyrs[["ox", "oy"]].to_numpy(dtype=np.float32)
+
+        # Orientation change rate (temporal)
+        ball_carr_dorient = ball_carrier[["delta_ox", "delta_oy"]].to_numpy(dtype=np.float32).squeeze()
+        off_dorient = off_plyrs[["delta_ox", "delta_oy"]].to_numpy(dtype=np.float32)
+        def_dorient = def_plyrs[["delta_ox", "delta_oy"]].to_numpy(dtype=np.float32)
+
+        # Zoo interaction features — 3-tier pattern per quantity:
+        #   Tier 1: Defender raw (tiled across offense)
+        #   Tier 2: Defender − ball carrier (tiled across offense)
+        #   Tier 3: Offense − defense (pairwise)
         x = [
+            # --- Original: velocity & position (10 features) ---
             # def_vx, def_vy
-            np.tile(def_mvmt_feats[:, 2:], (10, 1, 1)),
-            # def_x - ball_x, def_y - ball_y
-            np.tile(
-                def_mvmt_feats[None, :, :2] - ball_carr_mvmt_feats[None, None, :2],
-                (10, 1, 1),
-            ),
-            # def_vx - ball_vx, def_vy - ball_vy
-            np.tile(
-                def_mvmt_feats[None, :, 2:] - ball_carr_mvmt_feats[None, None, 2:],
-                (10, 1, 1),
-            ),
-            # off_x - def_x, off_y - def_y
-            off_mvmt_feats[:, None, :2] - def_mvmt_feats[None, :, :2],
-            # off_vx - def_vx, off_vy - def_vy
-            off_mvmt_feats[:, None, 2:] - def_mvmt_feats[None, :, 2:],
+            np.tile(def_mvmt[:, 2:], (10, 1, 1)),
+            # def_pos - ball_pos
+            np.tile(def_mvmt[None, :, :2] - ball_carr_mvmt[None, None, :2], (10, 1, 1)),
+            # def_vel - ball_vel
+            np.tile(def_mvmt[None, :, 2:] - ball_carr_mvmt[None, None, 2:], (10, 1, 1)),
+            # off_pos - def_pos
+            off_mvmt[:, None, :2] - def_mvmt[None, :, :2],
+            # off_vel - def_vel
+            off_mvmt[:, None, 2:] - def_mvmt[None, :, 2:],
+
+            # --- Acceleration interactions (6 features) ---
+            np.tile(def_accel, (10, 1, 1)),
+            np.tile(def_accel[None, :] - ball_carr_accel[None, None, :], (10, 1, 1)),
+            off_accel[:, None, :] - def_accel[None, :, :],
+
+            # --- Orientation interactions (6 features) ---
+            np.tile(def_orient, (10, 1, 1)),
+            np.tile(def_orient[None, :] - ball_carr_orient[None, None, :], (10, 1, 1)),
+            off_orient[:, None, :] - def_orient[None, :, :],
+
+            # --- Orientation change interactions (6 features) ---
+            np.tile(def_dorient, (10, 1, 1)),
+            np.tile(def_dorient[None, :] - ball_carr_dorient[None, None, :], (10, 1, 1)),
+            off_dorient[:, None, :] - def_dorient[None, :, :],
         ]
 
-        x = np.concatenate(
-            x,
-            dtype=np.float32,
-            axis=-1,
-        )
+        x = np.concatenate(x, dtype=np.float32, axis=-1)
 
-        # Zoo Architecture expects shape: (10 offensive players, 11 defensive players, 10 interaction features)
-        #
-        # This creates a grid where each cell [i, j] represents the interaction between
-        # offensive player i and defensive player j:
-        #
-        #           Defender 1    Defender 2    ...    Defender 11
-        # Offense 1  [10 feats]    [10 feats]    ...    [10 feats]
-        # Offense 2  [10 feats]    [10 feats]    ...    [10 feats]
-        #   ...         ...           ...        ...       ...
-        # Offense 10 [10 feats]    [10 feats]    ...    [10 feats]
-        #
-        # The 10 features per interaction include:
-        # - Defensive player velocity (2 features: vx, vy)
-        # - Relative position: defender - ball carrier (2 features: dx, dy)
-        # - Relative velocity: defender - ball carrier (2 features: dvx, dvy)
-        # - Relative position: offensive blocker - defender (2 features: dx, dy)
-        # - Relative velocity: offensive blocker - defender (2 features: dvx, dvy)
-        #
-        # This grid structure allows the Zoo model to learn pairwise offensive-defensive interactions,
-        # but limits its ability to see complex multi-player patterns (e.g., 3 defenders converging).
-        assert x.shape == (10, 11, 10), f"Expected shape (10, 11, 10), got {x.shape}"
+        assert x.shape == (10, 11, ZOO_INTERACTION_FEATURE_COUNT), (
+            f"Expected shape (10, 11, {ZOO_INTERACTION_FEATURE_COUNT}), got {x.shape}"
+        )
         return x
 
 

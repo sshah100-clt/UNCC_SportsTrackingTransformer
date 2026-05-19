@@ -280,6 +280,7 @@ class LitModel(LightningModule):
         batch_size: int,
         model_dim: int,
         num_layers: int,
+        feature_len: int,
         dropout: float = 0.1,
         learning_rate: float = 1e-3,
     ):
@@ -291,13 +292,14 @@ class LitModel(LightningModule):
             batch_size (int): Batch size for training and evaluation.
             model_dim (int): Dimension of the model's internal representations.
             num_layers (int): Number of layers in the model.
+            feature_len (int): Number of input features per player (transformer) or per interaction (zoo).
             dropout (float): Dropout rate for regularization.
             learning_rate (float): Learning rate for the optimizer.
         """
         super().__init__()
         self.model_type = model_type.lower()
         self.model_class = SportsTransformer if self.model_type == "transformer" else TheZooArchitecture
-        self.feature_len = 6 if self.model_type == "transformer" else 10
+        self.feature_len = feature_len
 
         # Initialize model with architecture-specific parameters
         self.model = self.model_class(

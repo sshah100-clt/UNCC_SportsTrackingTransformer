@@ -197,6 +197,27 @@ def standardize_tracking_directions(tracking_df: pl.DataFrame) -> pl.DataFrame:
     ).drop("playDirection")
 
 
+def add_temporal_features(tracking_df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Compute frame-over-frame temporal derivatives for each player within each play.
+
+    Must be called AFTER standardize_tracking_directions (consistent coordinate system)
+    and BEFORE augment_mirror_tracking (mirroring will handle sign flips for y-components).
+
+    Args:
+        tracking_df (pl.DataFrame): Tracking data with vx, vy, ox, oy columns.
+
+    Returns:
+        pl.DataFrame: Tracking data with ax, ay, delta_ox, delta_oy columns added.
+    """
+    return tracking_df.sort(["gameId", "playId", "nflId", "frameId"]).with_columns(
+        ax=pl.col("vx").diff().over(["gameId", "playId", "nflId"]).fill_null(0.0),
+        ay=pl.col("vy").diff().over(["gameId", "playId", "nflId"]).fill_null(0.0),
+        delta_ox=pl.col("ox").diff().over(["gameId", "playId", "nflId"]).fill_null(0.0),
+        delta_oy=pl.col("oy").diff().over(["gameId", "playId", "nflId"]).fill_null(0.0),
+    )
+
+
 def augment_mirror_tracking(tracking_df: pl.DataFrame) -> pl.DataFrame:
     """
     Augment data by mirroring the field assuming all plays are moving right.
@@ -216,6 +237,8 @@ def augment_mirror_tracking(tracking_df: pl.DataFrame) -> pl.DataFrame:
         y=53.3 - pl.col("y"),
         vy=-1 * pl.col("vy"),
         oy=-1 * pl.col("oy"),
+        ay=-1 * pl.col("ay"),
+        delta_oy=-1 * pl.col("delta_oy"),
         mirrored=pl.lit(True),
     )
 
@@ -403,6 +426,7 @@ def main():
     tracking_df = add_features_to_tracking_df(tracking_df, players_df, plays_df)
     tracking_df = convert_tracking_to_cartesian(tracking_df)
     tracking_df = standardize_tracking_directions(tracking_df)
+    tracking_df = add_temporal_features(tracking_df)
     tracking_df = augment_mirror_tracking(tracking_df)
 
     rel_tracking_df = add_relative_positions(tracking_df)

@@ -1,0 +1,20 @@
+split,metric,zoo,transformer,improvement_pct,improvement_yards,n_plays,n_frames
+train,ade_yards,5.01,4.03,19.6,0.98,8735,740590
+val,ade_yards,5.81,4.69,19.3,1.12,1872,158500
+test,ade_yards,5.78,4.61,20.2,1.17,1871,160124
+test-event-pass_arrived,ade_yards,5.13,4.72,8.0,0.41,732,1466
+test-event-ball_snap,ade_yards,8.72,8.77,-0.6,-0.05,958,1916
+test-event-pass_outcome_caught,ade_yards,4.62,4.22,8.7,0.4,842,1684
+test-event-run,ade_yards,7.92,6.83,13.8,1.09,142,284
+test-event-handoff,ade_yards,6.69,6.59,1.5,0.1,887,1776
+test-event-first_contact,ade_yards,4.06,2.88,29.1,1.18,1578,3156
+test-event-out_of_bounds,ade_yards,5.81,1.72,70.4,4.09,272,544
+test-event-tackle,ade_yards,4.07,0.98,75.9,3.09,1497,2994
+test-frames-before-tackle-0-5,ade_yards,4.27,1.22,71.4,3.05,1871,9355
+test-frames-before-tackle-10-15,ade_yards,3.61,2.23,38.2,1.38,1787,8679
+test-frames-before-tackle-15-20,ade_yards,3.78,3.13,17.2,0.65,1651,7952
+test-frames-before-tackle-20-25,ade_yards,4.34,4.19,3.5,0.15,1503,7228
+test-frames-before-tackle-25-30,ade_yards,5.12,5.21,-1.8,-0.09,1349,6443
+test-frames-before-tackle-30+,ade_yards,9.57,9.57,0.0,0.0,1199,23677
+test-frames-before-tackle-5-10,ade_yards,3.88,1.52,60.8,2.36,1870,9248
+test-frames-before-tackle-after tackle,ade_yards,4.61,1.16,74.8,3.45,1871,7480

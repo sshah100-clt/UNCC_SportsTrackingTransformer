@@ -413,11 +413,12 @@ def compute_model_metrics(checkpoint_path: str, model_type: str) -> dict:
     model = lit_model.model
     model.eval()
 
-    # Create dummy input shape
+    # Create dummy input shape using feature_len from checkpoint hparams
+    feature_len = int(lit_model.hparams["feature_len"])
     if model_type == "transformer":
-        input_shape = (1, 22, 6)
+        input_shape = (1, 22, feature_len)
     else:  # zoo
-        input_shape = (1, 10, 11, 10)
+        input_shape = (1, 10, 11, feature_len)
 
     # Calculate params
     params = int(lit_model.hparams["params"])
