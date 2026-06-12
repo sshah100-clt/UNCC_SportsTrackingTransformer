@@ -46,11 +46,41 @@ PREPPED_DATA_DIR = Path("data/split_prepped_data/")
 DATASET_DIR = Path("data/datasets/")
 
 TRANSFORMER_FEATURES = [
-    "x_rel", "y_rel", "vx", "vy", "ax", "ay",
-    "ox", "oy", "delta_ox", "delta_oy",
-    "side", "is_ball_carrier",
+    "x_rel",
+    "y_rel",
+    "vx",
+    "vy",
+    "ax",
+    "ay",
+    "ox",
+    "oy",
+    "delta_ox",
+    "delta_oy",
+    "side",
+    "is_ball_carrier",
 ]
 ZOO_INTERACTION_FEATURE_COUNT = 28
+
+# Raw (non-engineered) per-player features used by the temporal sequence models.
+# These are sensor-measured / positional quantities only -- no backward-difference
+# features (ax, ay, delta_ox, delta_oy), because recurrent models learn dynamics
+# from the frame sequence itself rather than from hand-computed derivatives.
+RAW_FEATURES = [
+    "x_rel",
+    "y_rel",
+    "vx",
+    "vy",
+    "ox",
+    "oy",
+    "side",
+    "is_ball_carrier",
+]
+RAW_FEATURE_COUNT = len(RAW_FEATURES)
+
+# Sequence model types. All consume a window of T frames, shape (T, 22, F), built
+# on RAW_FEATURES, and share a single precomputed dataset (DATASET_DIR / "temporal").
+TEMPORAL_MODEL_TYPES = ["windowed_transformer", "pure_gru", "hybrid_ts", "hybrid_st"]
+TEMPORAL_DATASET_NAME = "temporal"
 
 
 class BDB2024_Dataset(Dataset):
@@ -86,13 +116,40 @@ class BDB2024_Dataset(Dataset):
         Raises:
             ValueError: If an invalid model_type is provided
         """
-        if model_type not in ["transformer", "zoo"]:
-            raise ValueError("model_type must be either 'transformer' or 'zoo'")
+        valid_types = ["transformer", "zoo"] + TEMPORAL_MODEL_TYPES
+        if model_type not in valid_types:
+            raise ValueError(f"model_type must be one of {valid_types}")
 
         self.model_type = model_type
-        self.feature_len = len(TRANSFORMER_FEATURES) if model_type == "transformer" else ZOO_INTERACTION_FEATURE_COUNT
+        # Temporal models use the raw feature set; transformer uses the engineered set; zoo builds its own grid.
+        if model_type in TEMPORAL_MODEL_TYPES:
+            self.feature_list = RAW_FEATURES
+            self.feature_len = RAW_FEATURE_COUNT
+        elif model_type == "transformer":
+            self.feature_list = TRANSFORMER_FEATURES
+            self.feature_len = len(TRANSFORMER_FEATURES)
+        else:  # zoo
+            self.feature_list = None
+            self.feature_len = ZOO_INTERACTION_FEATURE_COUNT
+
+        # Window length for temporal models, set after loading via load_datasets().
+        # window_length == 1 yields the original single-frame (22, F) behavior.
+        self.window_length = 1
+
         # Sort keys to ensure deterministic ordering across runs
         self.keys = sorted(feature_df.select(["gameId", "playId", "mirrored", "frameId"]).unique().rows())
+
+        # Per-play ordered frame index for on-the-fly windowing. Keys are sorted as
+        # (gameId, playId, mirrored, frameId) tuples, so frameIds within each play are
+        # already ascending. play_frames maps a play to its ordered frameIds; key_pos
+        # maps each full key to its position within that play.
+        self.play_frames: dict[tuple, list] = {}
+        self.key_pos: dict[tuple, int] = {}
+        for g, p, m, f in self.keys:
+            self.play_frames.setdefault((g, p, m), []).append(f)
+        for (g, p, m), frames in self.play_frames.items():
+            for i, f in enumerate(frames):
+                self.key_pos[(g, p, m, f)] = i
 
         # Convert to pandas form with index for quick row retrieval
         self.feature_df_partition = (
@@ -159,7 +216,30 @@ class BDB2024_Dataset(Dataset):
         if idx < 0 or idx >= len(self):
             raise IndexError("Index out of range")
         key = self.keys[idx]
+
+        # getattr fallback keeps datasets pickled before windowing existed (which lack
+        # the window_length attribute) working as single-frame (22, F) datasets.
+        if getattr(self, "window_length", 1) > 1:
+            return self._get_window(key), self.tgt_arrays[key]
         return self.feature_arrays[key], self.tgt_arrays[key]
+
+    def _get_window(self, key: tuple) -> np.ndarray:
+        """
+        Build a temporal window of the T frames ending at `key`, shape (T, 22, F).
+
+        Frames are gathered from the same (gameId, playId, mirrored) play, ordered
+        oldest -> newest (index -1 is the current frame). When fewer than T frames
+        precede the current frame (start of a play), the earliest available frame is
+        repeated (edge padding), so no out-of-play or fake-zero frames are introduced.
+        """
+        g, p, m, _ = key
+        frames = self.play_frames[(g, p, m)]
+        pos = self.key_pos[key]
+        window = []
+        for offset in range(self.window_length - 1, -1, -1):
+            src_pos = max(pos - offset, 0)  # edge-pad with the earliest frame
+            window.append(self.feature_arrays[(g, p, m, frames[src_pos])])
+        return np.stack(window, axis=0)
 
     def transform_input_frame_df(self, frame_df: pd.DataFrame) -> np.ndarray:
         """
@@ -174,12 +254,10 @@ class BDB2024_Dataset(Dataset):
         Raises:
             ValueError: If an unknown model type is specified
         """
-        if self.model_type == "transformer":
-            return self.transformer_transform_input_frame_df(frame_df)
-        elif self.model_type == "zoo":
+        if self.model_type == "zoo":
             return self.zoo_transform_input_frame_df(frame_df)
-        else:
-            raise ValueError(f"Unknown model type: {self.model_type}")
+        # transformer and all temporal model types use the per-player (22, F) layout
+        return self.transformer_transform_input_frame_df(frame_df)
 
     def transform_target_df(self, tgt_df: pd.DataFrame) -> np.ndarray:
         """
@@ -211,7 +289,7 @@ class BDB2024_Dataset(Dataset):
         Raises:
             AssertionError: If the output shape is not as expected
         """
-        features = TRANSFORMER_FEATURES
+        features = self.feature_list
         x = frame_df[features].to_numpy(dtype=np.float32)
         assert x.shape == (22, len(features)), f"Expected shape (22, {len(features)}), got {x.shape}"
         return x
@@ -270,17 +348,14 @@ class BDB2024_Dataset(Dataset):
             off_mvmt[:, None, :2] - def_mvmt[None, :, :2],
             # off_vel - def_vel
             off_mvmt[:, None, 2:] - def_mvmt[None, :, 2:],
-
             # --- Acceleration interactions (6 features) ---
             np.tile(def_accel, (10, 1, 1)),
             np.tile(def_accel[None, :] - ball_carr_accel[None, None, :], (10, 1, 1)),
             off_accel[:, None, :] - def_accel[None, :, :],
-
             # --- Orientation interactions (6 features) ---
             np.tile(def_orient, (10, 1, 1)),
             np.tile(def_orient[None, :] - ball_carr_orient[None, None, :], (10, 1, 1)),
             off_orient[:, None, :] - def_orient[None, :, :],
-
             # --- Orientation change interactions (6 features) ---
             np.tile(def_dorient, (10, 1, 1)),
             np.tile(def_dorient[None, :] - ball_carr_dorient[None, None, :], (10, 1, 1)),
@@ -289,19 +364,23 @@ class BDB2024_Dataset(Dataset):
 
         x = np.concatenate(x, dtype=np.float32, axis=-1)
 
-        assert x.shape == (10, 11, ZOO_INTERACTION_FEATURE_COUNT), (
-            f"Expected shape (10, 11, {ZOO_INTERACTION_FEATURE_COUNT}), got {x.shape}"
-        )
+        assert x.shape == (
+            10,
+            11,
+            ZOO_INTERACTION_FEATURE_COUNT,
+        ), f"Expected shape (10, 11, {ZOO_INTERACTION_FEATURE_COUNT}), got {x.shape}"
         return x
 
 
-def load_datasets(model_type: str, split: str) -> BDB2024_Dataset:
+def load_datasets(model_type: str, split: str, window_length: int = 1) -> BDB2024_Dataset:
     """
     Load datasets for a specific model type and data split.
 
     Args:
-        model_type (str): Type of model ('transformer' or 'zoo')
+        model_type (str): Type of model ('transformer', 'zoo', or a temporal type).
         split (str): Data split ('train', 'val', or 'test')
+        window_length (int): Temporal window length T to apply when serving samples.
+            Only meaningful for temporal model types; ignored (left at 1) otherwise.
 
     Returns:
         BDB2024_Dataset: Loaded dataset for the specified model type and split
@@ -310,30 +389,52 @@ def load_datasets(model_type: str, split: str) -> BDB2024_Dataset:
         ValueError: If an unknown split is specified
         FileNotFoundError: If the dataset file is not found
     """
-    ds_dir = DATASET_DIR / model_type
+    # All temporal model types share one precomputed dataset built on RAW_FEATURES.
+    ds_name = TEMPORAL_DATASET_NAME if model_type in TEMPORAL_MODEL_TYPES else model_type
+    ds_dir = DATASET_DIR / ds_name
     file_path = ds_dir / f"{split}_dataset.pkl"
 
     if not file_path.exists():
         raise FileNotFoundError(f"Dataset file not found: {file_path}")
 
     with open(file_path, "rb") as f:
-        return pickle.load(f)
+        dataset = pickle.load(f)
+
+    if model_type in TEMPORAL_MODEL_TYPES:
+        dataset.window_length = window_length
+    return dataset
 
 
 def main():
     """
     Main function to create and save datasets for different model types and splits.
+
+    Builds the zoo and transformer datasets (engineered/12-feature) and a single
+    shared temporal dataset (RAW_FEATURES, served as windows by the sequence models).
+    Existing pickles are skipped so re-running only builds what is missing.
     """
+    # (model_type used to build, output directory name)
+    build_specs = [
+        ("zoo", "zoo"),
+        ("transformer", "transformer"),
+        # One shared raw windowed dataset for all temporal model types. The build-time
+        # model_type only selects RAW_FEATURES; window_length is applied later at load.
+        ("windowed_transformer", TEMPORAL_DATASET_NAME),
+    ]
     for split in ["test", "val", "train"]:
         feature_df = pl.read_parquet(PREPPED_DATA_DIR / f"{split}_features.parquet")
         tgt_df = pl.read_parquet(PREPPED_DATA_DIR / f"{split}_targets.parquet")
-        for model_type in ["zoo", "transformer"]:
-            print(f"Creating dataset for {model_type=}, {split=}...")
+        for model_type, out_name in build_specs:
+            out_dir = DATASET_DIR / out_name
+            out_path = out_dir / f"{split}_dataset.pkl"
+            if out_path.exists():
+                print(f"Skipping existing dataset: {out_path}")
+                continue
+            print(f"Creating dataset for {out_name=} ({model_type=}), {split=}...")
             tic = time.time()
             dataset = BDB2024_Dataset(model_type, feature_df, tgt_df)
-            out_dir = DATASET_DIR / model_type
             out_dir.mkdir(exist_ok=True, parents=True)
-            with open(out_dir / f"{split}_dataset.pkl", "wb") as f:
+            with open(out_path, "wb") as f:
                 pickle.dump(dataset, f)
             print(f"Took {(time.time() - tic)/60:.1f} mins")
 

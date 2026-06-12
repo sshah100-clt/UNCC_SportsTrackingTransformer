@@ -30,12 +30,24 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from datasets import (
-    BDB2024_Dataset,
+    RAW_FEATURE_COUNT,
+    TEMPORAL_MODEL_TYPES,
     TRANSFORMER_FEATURES,
     ZOO_INTERACTION_FEATURE_COUNT,
+    BDB2024_Dataset,
     load_datasets,
 )
 from models import LitModel
+
+
+def get_feature_len(model_type: str) -> int:
+    """Number of input features per player/interaction for a given model type."""
+    if model_type in TEMPORAL_MODEL_TYPES:
+        return RAW_FEATURE_COUNT
+    if model_type == "transformer":
+        return len(TRANSFORMER_FEATURES)
+    return ZOO_INTERACTION_FEATURE_COUNT
+
 
 MODELS_PATH = Path("models")
 MODELS_PATH.mkdir(exist_ok=True)
@@ -72,10 +84,12 @@ def predict_model_as_df(model: LitModel = None, ckpt_path: Path = None, devices=
     if model is None:
         model = LitModel.load_from_checkpoint(ckpt_path)
 
-    # Load datasets
-    train_ds: BDB2024_Dataset = load_datasets(model.model_type, split="train")
-    val_ds: BDB2024_Dataset = load_datasets(model.model_type, split="val")
-    test_ds: BDB2024_Dataset = load_datasets(model.model_type, split="test")
+    # Load datasets (temporal models serve T-frame windows; window_length is persisted
+    # in the model hparams and ignored by the non-temporal datasets).
+    window_length = int(model.hparams.get("window_length", 1))
+    train_ds: BDB2024_Dataset = load_datasets(model.model_type, split="train", window_length=window_length)
+    val_ds: BDB2024_Dataset = load_datasets(model.model_type, split="val", window_length=window_length)
+    test_ds: BDB2024_Dataset = load_datasets(model.model_type, split="test", window_length=window_length)
 
     # Create unshuffled dataloaders for prediction
     dataloaders = {
@@ -173,6 +187,7 @@ def train_model(
     num_layers,
     learning_rate,
     dropout,
+    window_length=1,
     device=0,
     dbg_run=False,
     skip_existing=False,
@@ -207,13 +222,19 @@ def train_model(
         Training automatically resumes from the best checkpoint if one exists,
         unless skip_existing=True in which case training is skipped entirely.
     """
-    # Set up logger and trainer for full run
+    # Set up logger and trainer for full run. Temporal models include the window length
+    # (W{T}) in the version so configs across the T sweep get distinct checkpoint dirs.
+    is_temporal = model_type in TEMPORAL_MODEL_TYPES
+    version = f"M{model_dim}_L{num_layers}"
+    if is_temporal:
+        version += f"_W{window_length}"
+    version += f"_LR{learning_rate:.0e}"
     logger = TensorBoardLogger(
         save_dir=MODELS_PATH,
         name=model_type,
         log_graph=False,
         default_hp_metric=False,
-        version=f"M{model_dim}_L{num_layers}_LR{learning_rate:.0e}",
+        version=version,
     )
 
     # Check for existing checkpoint with best val_loss
@@ -228,7 +249,7 @@ def train_model(
             print(f"Resuming training from best checkpoint: {existing_ckpt}")
 
     # initialize model
-    feature_len = len(TRANSFORMER_FEATURES) if model_type == "transformer" else ZOO_INTERACTION_FEATURE_COUNT
+    feature_len = get_feature_len(model_type)
     if existing_ckpt is not None:
         lit_model = LitModel.load_from_checkpoint(existing_ckpt)
         curr_epoch, _ = get_epoch_val_loss_from_ckpt(existing_ckpt)
@@ -241,8 +262,8 @@ def train_model(
             feature_len=feature_len,
             learning_rate=learning_rate,
             dropout=dropout,
+            window_length=window_length,
         )
-        curr_epoch = 0
 
     # if skip_existing and checkpoint exists, skip re-training
     if skip_existing and existing_ckpt is not None:
@@ -251,8 +272,8 @@ def train_model(
 
     # Load preprocessed datasets specific to model type
     # Zoo and Transformer models require different feature formats
-    train_ds: BDB2024_Dataset = load_datasets(model_type, split="train")
-    val_ds: BDB2024_Dataset = load_datasets(model_type, split="val")
+    train_ds: BDB2024_Dataset = load_datasets(model_type, split="train", window_length=window_length)
+    val_ds: BDB2024_Dataset = load_datasets(model_type, split="val", window_length=window_length)
 
     # Create dataloaders with optimized settings
     # Training: smaller batch size, shuffled for better generalization
@@ -325,9 +346,12 @@ def main(args):
     lrs = [1e-4]
     model_dims = [32, 128, 512]
     num_layers = [1, 2, 4, 8]
+    # Temporal models add a window-length axis (T frames of history); 0.5s..2.0s at 10Hz.
+    # Non-temporal models use window_length=1 (single frame), the original behavior.
+    window_lengths = [5, 10, 15, 20] if args.model_type in TEMPORAL_MODEL_TYPES else [1]
 
-    # Create gridsearch iterable
-    gridsearch = list(product(model_dims, num_layers, lrs))
+    # Create gridsearch iterable: (model_dim, num_layers, window_length, lr)
+    gridsearch = list(product(model_dims, num_layers, window_lengths, lrs))
     if args.shuffle:
         random.shuffle(gridsearch)
     if args.reverse:
@@ -338,7 +362,7 @@ def main(args):
         gridsearch = gridsearch[: args.hparam_search_iters]
 
     # Train models for each hyperparameter combination
-    for M, L, LR in tqdm(gridsearch, desc="Hyperparam Gridsearch"):
+    for M, L, W, LR in tqdm(gridsearch, desc="Hyperparam Gridsearch"):
         train_model(
             model_type=args.model_type,
             batch_size=256,
@@ -346,6 +370,7 @@ def main(args):
             num_layers=L,
             learning_rate=LR,
             dropout=0.3,
+            window_length=W,
             device=args.device,
             skip_existing=args.skip_existing,
             patience=args.patience,
@@ -364,7 +389,13 @@ if __name__ == "__main__":
     parser.add_argument("--shuffle", "-S", action="store_true", help="Shuffle the hyperparameter gridsearch")
     parser.add_argument("--reverse", "-R", action="store_true", help="Reverse the hyperparameter gridsearch")
     parser.add_argument(
-        "--model_type", type=str, default="transformer", help="Type of model to train ('transformer' or 'zoo')"
+        "--model_type",
+        type=str,
+        default="transformer",
+        help=(
+            "Type of model to train: 'transformer', 'zoo', or a temporal type "
+            "('windowed_transformer', 'pure_gru', 'hybrid_ts', 'hybrid_st')"
+        ),
     )
     parser.add_argument("--patience", "-P", type=int, default=10, help="Early stopping patience")
     args = parser.parse_args()
