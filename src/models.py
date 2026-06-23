@@ -496,12 +496,15 @@ class HybridST(nn.Module):
 EDGE_FEATURE_DIM = 6  # [dx, dy, distance, dvx, dvy, closing_speed] per ordered pair
 
 
-def build_adjacency_torch(side: Tensor, bc: Tensor, topology: str) -> Tensor:
+def build_adjacency_torch(side: Tensor, bc: Tensor, topology: str, pos: Tensor | None = None, k: int = 8) -> Tensor:
     """Batched (B, N, N) boolean adjacency from per-player `side` (+1/-1) and `bc` (0/1).
 
     Mirrors src/graphs.build_adjacency but in torch, and ALWAYS adds self-loops so no
     node has a fully-masked attention row (and so `full` matches a standard Transformer,
     whose self-attention includes the token itself).
+
+    Topologies: "full", "bipartite" (offense<->defense), "hub" (everyone<->ball carrier),
+    and "knn" (each node to its k nearest by distance, symmetrized; requires `pos`).
     """
     b, n = side.shape
     if topology == "full":
@@ -511,6 +514,15 @@ def build_adjacency_torch(side: Tensor, bc: Tensor, topology: str) -> Tensor:
     elif topology == "hub":
         bcb = bc > 0.5
         adj = bcb.unsqueeze(2) | bcb.unsqueeze(1)  # either endpoint is the ball carrier
+    elif topology == "knn":
+        if pos is None:
+            raise ValueError("knn topology requires pos")
+        dist = torch.cdist(pos, pos)  # (B, N, N)
+        dist = dist + torch.eye(n, device=pos.device).unsqueeze(0) * 1e9  # exclude self from neighbors
+        idx = dist.topk(min(k, n - 1), dim=-1, largest=False).indices  # (B, N, k)
+        adj = torch.zeros(b, n, n, dtype=torch.bool, device=side.device)
+        adj.scatter_(2, idx, True)
+        adj = adj | adj.transpose(1, 2)  # symmetric: connected if either is a neighbor of the other
     else:
         raise ValueError(f"unknown topology {topology!r}")
     eye = torch.eye(n, dtype=torch.bool, device=side.device).unsqueeze(0)
@@ -614,6 +626,93 @@ class GraphModel(nn.Module):
         for layer in self.layers:
             h = layer(h, adj, edge_feats)
         return self.decoder(h.mean(dim=1))
+
+
+class SpatioTemporalGNN(nn.Module):
+    """Temporal model (`hybrid_ts`/`hybrid_st`) whose player-interaction step is a GAT,
+    so the interaction can use an explicit topology and physical edge features.
+
+    Mirrors HybridTS / HybridST but replaces their plain `nn.TransformerEncoder` interaction
+    with `GATLayer`s. The edge features (distance, closing speed, ...) and the adjacency are
+    computed from the RAW positions/velocities -- at the current (last) frame for `ts`, and
+    per frame for `st`.
+
+    Input: [batch, T, 22, feature_len] -> [batch, 2].
+    Knobs:
+      ordering      -- "ts" (GRU per player, then one GAT interaction) or
+                       "st" (GAT interaction per frame, then GRU over time).
+      topology      -- "full" / "bipartite" / "hub" / "knn".
+      edge_features -- feed distance/closing-speed into the GAT (True) or not (False).
+    """
+
+    def __init__(
+        self,
+        feature_len: int,
+        model_dim: int = 128,
+        num_layers: int = 4,
+        dropout: float = 0.3,
+        window_length: int = 15,
+        ordering: str = "ts",
+        topology: str = "full",
+        edge_features: bool = True,
+        knn_k: int = 8,
+    ):
+        super().__init__()
+        assert ordering in ("ts", "st")
+        self.ordering = ordering
+        self.topology = topology
+        self.use_edge_features = edge_features
+        self.knn_k = knn_k
+        self.window_length = window_length
+        num_heads = min(16, max(2, 2 * round(model_dim / 64)))
+        edge_dim = EDGE_FEATURE_DIM if edge_features else 0
+        self.hyperparams = {
+            "model_dim": model_dim,
+            "num_layers": num_layers,
+            "num_heads": num_heads,
+            "window_length": window_length,
+            "ordering": ordering,
+            "topology": topology,
+            "edge_features": int(edge_features),
+        }
+        self.feature_norm_layer = nn.BatchNorm1d(feature_len)
+        self.gat_layers = nn.ModuleList([GATLayer(model_dim, num_heads, dropout, edge_dim) for _ in range(num_layers)])
+        if ordering == "ts":
+            # per-player single-layer GRU encodes the trajectory (like HybridTS), then GAT interaction.
+            self.gru = nn.GRU(input_size=feature_len, hidden_size=model_dim, num_layers=1, batch_first=True)
+        else:
+            # embed each frame, GAT interaction per frame, then a single-layer GRU integrates over time.
+            self.feature_embedding_layer = nn.Sequential(
+                nn.Linear(feature_len, model_dim), nn.ReLU(), nn.LayerNorm(model_dim), nn.Dropout(dropout)
+            )
+            self.gru = nn.GRU(input_size=model_dim, hidden_size=model_dim, num_layers=1, batch_first=True)
+        self.decoder = _build_decoder(model_dim, dropout)
+
+    def _interact(self, h: Tensor, side: Tensor, bc: Tensor, pos: Tensor, vel: Tensor) -> Tensor:
+        adj = build_adjacency_torch(side, bc, self.topology, pos=pos, k=self.knn_k)
+        edge_feats = edge_features_torch(pos, vel) if self.use_edge_features else None
+        for layer in self.gat_layers:
+            h = layer(h, adj, edge_feats)
+        return h
+
+    def forward(self, x: Tensor) -> Tensor:
+        # x: [B, T, P, F]; RAW_FEATURES = [x_rel, y_rel, vx, vy, ox, oy, side, is_ball_carrier]
+        b, t, p, f = x.size()
+        xn = self.feature_norm_layer(x.reshape(-1, f)).reshape(b, t, p, f)
+        if self.ordering == "ts":
+            seq = xn.permute(0, 2, 1, 3).reshape(b * p, t, f)  # per-player trajectory
+            _, h_n = self.gru(seq)
+            h = h_n[-1].reshape(b, p, -1)  # [B, P, model_dim]
+            cur = x[:, -1]  # current frame, RAW (for physical edge features)
+            h = self._interact(h, cur[..., 6], cur[..., 7], cur[..., 0:2], cur[..., 2:4])
+            return self.decoder(h.mean(dim=1))
+        # st: embed + per-frame GAT interaction (fold time into batch), then GRU over time
+        h = self.feature_embedding_layer(xn).reshape(b * t, p, -1)  # [B*T, P, M]
+        cur = x.reshape(b * t, p, f)  # RAW per-frame
+        h = self._interact(h, cur[..., 6], cur[..., 7], cur[..., 0:2], cur[..., 2:4])
+        h = h.reshape(b, t, p, -1).permute(0, 2, 1, 3).reshape(b * p, t, -1)  # per-player sequence
+        _, h_n = self.gru(h)
+        return self.decoder(h_n[-1].reshape(b, p, -1).mean(dim=1))
 
 
 class LitModel(LightningModule):
