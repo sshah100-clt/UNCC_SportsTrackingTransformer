@@ -1,0 +1,17 @@
+variant,ordering,topology,knn_k,val_ade,test_ade,params,best_epoch,val_loss
+stgnn_ts_knn_cross_hub,ts,knn_cross_hub,2,4.27,4.2,866978,8,2.29
+stgnn_ts_knn_cross_hub,ts,knn_cross_hub,4,4.26,4.2,866978,12,2.288
+stgnn_ts_knn_cross_hub,ts,knn_cross_hub,6,4.23,4.18,866978,18,2.277
+stgnn_ts_knn_cross_hub,ts,knn_cross_hub,8,4.27,4.19,866978,17,2.294
+stgnn_ts_knn_hub,ts,knn_hub,2,4.27,4.19,866978,17,2.302
+stgnn_ts_knn_hub,ts,knn_hub,4,4.24,4.16,866978,20,2.276
+stgnn_ts_knn_hub,ts,knn_hub,6,4.25,4.19,866978,18,2.282
+stgnn_ts_knn_hub,ts,knn_hub,8,4.25,4.19,866978,13,2.275
+stgnn_ts_knn_hybrid_hub,ts,knn_hybrid_hub,2,4.27,4.2,866978,21,2.292
+stgnn_ts_knn_hybrid_hub,ts,knn_hybrid_hub,4,4.24,4.12,866978,21,2.275
+stgnn_ts_knn_hybrid_hub,ts,knn_hybrid_hub,6,4.26,4.16,866978,13,2.289
+stgnn_ts_knn_hybrid_hub,ts,knn_hybrid_hub,8,4.25,4.16,866978,14,2.283
+stgnn_ts_knn_same_hub,ts,knn_same_hub,2,4.26,4.2,866978,15,2.285
+stgnn_ts_knn_same_hub,ts,knn_same_hub,4,4.21,4.16,866978,21,2.267
+stgnn_ts_knn_same_hub,ts,knn_same_hub,6,4.29,4.19,866978,7,2.315
+stgnn_ts_knn_same_hub,ts,knn_same_hub,8,4.24,4.19,866978,14,2.283

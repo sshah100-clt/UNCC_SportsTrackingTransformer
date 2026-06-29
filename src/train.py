@@ -30,22 +30,34 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from datasets import (
-    BDB2024_Dataset,
+    RAW_FEATURE_COUNT,
+    TEMPORAL_MODEL_TYPES,
     TRANSFORMER_FEATURES,
     ZOO_INTERACTION_FEATURE_COUNT,
+    BDB2024_Dataset,
     load_datasets,
 )
 from models import LitModel
+
+
+def get_feature_len(model_type: str) -> int:
+    """Number of input features per player/interaction for a given model type."""
+    if model_type in TEMPORAL_MODEL_TYPES:
+        return RAW_FEATURE_COUNT
+    if model_type == "transformer":
+        return len(TRANSFORMER_FEATURES)
+    return ZOO_INTERACTION_FEATURE_COUNT
+
 
 MODELS_PATH = Path("models")
 MODELS_PATH.mkdir(exist_ok=True)
 
 # Set random seeds for reproducibility
-torch.manual_seed(42)
-np.random.seed(42)
-random.seed(42)
+torch.manual_seed(621)
+np.random.seed(621)
+random.seed(621)
 if torch.cuda.is_available():
-    torch.cuda.manual_seed_all(42)
+    torch.cuda.manual_seed_all(621)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
@@ -72,10 +84,12 @@ def predict_model_as_df(model: LitModel = None, ckpt_path: Path = None, devices=
     if model is None:
         model = LitModel.load_from_checkpoint(ckpt_path)
 
-    # Load datasets
-    train_ds: BDB2024_Dataset = load_datasets(model.model_type, split="train")
-    val_ds: BDB2024_Dataset = load_datasets(model.model_type, split="val")
-    test_ds: BDB2024_Dataset = load_datasets(model.model_type, split="test")
+    # Load datasets (temporal models serve T-frame windows; window_length is persisted
+    # in the model hparams and ignored by the non-temporal datasets).
+    window_length = int(model.hparams.get("window_length", 1))
+    train_ds: BDB2024_Dataset = load_datasets(model.model_type, split="train", window_length=window_length)
+    val_ds: BDB2024_Dataset = load_datasets(model.model_type, split="val", window_length=window_length)
+    test_ds: BDB2024_Dataset = load_datasets(model.model_type, split="test", window_length=window_length)
 
     # Create unshuffled dataloaders for prediction
     dataloaders = {
@@ -173,10 +187,15 @@ def train_model(
     num_layers,
     learning_rate,
     dropout,
+    window_length=1,
     device=0,
     dbg_run=False,
     skip_existing=False,
+    max_epochs=45,
     patience=5,
+    topology="full",
+    edge_features=True,
+    knn_k=4
 ):
     """
     Train a single model with specified hyperparameters.
@@ -207,13 +226,21 @@ def train_model(
         Training automatically resumes from the best checkpoint if one exists,
         unless skip_existing=True in which case training is skipped entirely.
     """
-    # Set up logger and trainer for full run
+    # Set up logger and trainer for full run. Temporal models include the window length
+    # (W{T}) in the version so configs across the T sweep get distinct checkpoint dirs.
+    is_temporal = model_type in TEMPORAL_MODEL_TYPES
+    version = f"M{model_dim}_L{num_layers}"
+    if is_temporal:
+        version += f"_W{window_length}"
+    if model_type in ["stgnn_ts", "stgnn_st"]:
+        version += f"_{topology}_K{knn_k}"
+    version += f"_LR{learning_rate:.0e}"
     logger = TensorBoardLogger(
         save_dir=MODELS_PATH,
         name=model_type,
         log_graph=False,
         default_hp_metric=False,
-        version=f"M{model_dim}_L{num_layers}_LR{learning_rate:.0e}",
+        version=version,
     )
 
     # Check for existing checkpoint with best val_loss
@@ -228,7 +255,7 @@ def train_model(
             print(f"Resuming training from best checkpoint: {existing_ckpt}")
 
     # initialize model
-    feature_len = len(TRANSFORMER_FEATURES) if model_type == "transformer" else ZOO_INTERACTION_FEATURE_COUNT
+    feature_len = get_feature_len(model_type)
     if existing_ckpt is not None:
         lit_model = LitModel.load_from_checkpoint(existing_ckpt)
         curr_epoch, _ = get_epoch_val_loss_from_ckpt(existing_ckpt)
@@ -241,8 +268,11 @@ def train_model(
             feature_len=feature_len,
             learning_rate=learning_rate,
             dropout=dropout,
+            window_length=window_length,
+            topology=topology,
+            edge_features=edge_features,
+            knn_k=knn_k
         )
-        curr_epoch = 0
 
     # if skip_existing and checkpoint exists, skip re-training
     if skip_existing and existing_ckpt is not None:
@@ -251,8 +281,8 @@ def train_model(
 
     # Load preprocessed datasets specific to model type
     # Zoo and Transformer models require different feature formats
-    train_ds: BDB2024_Dataset = load_datasets(model_type, split="train")
-    val_ds: BDB2024_Dataset = load_datasets(model_type, split="val")
+    train_ds: BDB2024_Dataset = load_datasets(model_type, split="train", window_length=window_length)
+    val_ds: BDB2024_Dataset = load_datasets(model_type, split="val", window_length=window_length)
 
     # Create dataloaders with optimized settings
     # Training: smaller batch size, shuffled for better generalization
@@ -277,7 +307,7 @@ def train_model(
         dbg_trainer.fit(lit_model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
 
     trainer = Trainer(
-        max_epochs=200,
+        max_epochs=max_epochs,
         accelerator="gpu",
         profiler=None,
         logger=logger,
@@ -303,6 +333,92 @@ def train_model(
 
     return lit_model
 
+STGNN_TOPOLOGIES = [
+    "full", "bipartite", "hub",
+    "knn_same", "knn_cross", "knn_hybrid", "knn",
+    "knn_same_hub", "knn_cross_hub", "knn_hybrid_hub", "knn_hub",
+]
+
+def run_stgnn_probe(device: int = 0):
+    """
+    Fixed-config probe for STGNN_TS and STGNN_ST across all 11 topologies (22 variants).
+    Fixed config: model_dim=128, num_layers=4, window=10, lr=5e-4, knn_k=4,
+    max 45 epochs, patience=8.
+    """
+    for model_type, topology in product(["stgnn_ts", "stgnn_st"], STGNN_TOPOLOGIES):
+        print(f"\nTraining {model_type} | topology={topology}")
+        train_model(
+            model_type=model_type,
+            batch_size=256,
+            model_dim=128,
+            num_layers=4,
+            learning_rate=5e-4,
+            dropout=0.3,
+            window_length=10,
+            device=device,
+            skip_existing=True,
+            max_epochs=45,
+            patience=8,
+            topology=topology,
+            edge_features=True,
+            knn_k=4,
+        )
+
+KNN_TOPOLOGIES = [
+    "knn_hybrid_hub",
+    "knn_same_hub",
+    "knn_cross_hub",
+    "knn_hub",
+]
+
+def run_knn_sweep(device: int = 0):
+    for topology, k in product(KNN_TOPOLOGIES, [2,4,6,8]):
+        print(f"\nTraining stgnn_ts | topology={topology} | k={k}")
+        train_model(
+            model_type="stgnn_ts",
+            batch_size=256,
+            model_dim=128,
+            num_layers=4,
+            learning_rate=5e-4,
+            dropout=0.3,
+            window_length=10,
+            device=device,
+            skip_existing=True,
+            max_epochs=45,
+            patience=8,
+            topology=topology,
+            edge_features=True,
+            knn_k=k,
+        )
+
+def run_config_sweep(device: int = 0):
+    """
+    Full config sweep for stgnn_ts with knn_hybrid_hub topology (best from probe).
+    Sweeps model_dim, num_layers, and window_length.
+    Fixed: topology=knn_hybrid_hub, knn_k=4, lr=5e-4, patience=8, max_epochs=45.
+    """
+    model_dims = [32, 128]
+    num_layers_list = [1, 2, 4, 8]
+    window_lengths = [5, 10, 15, 20]
+
+    for model_dim, num_layers, window_length in product(model_dims, num_layers_list, window_lengths):
+        print(f"\nTraining stgnn_ts | M{model_dim}_L{num_layers}_W{window_length}")
+        train_model(
+            model_type="stgnn_ts",
+            batch_size=256,
+            model_dim=model_dim,
+            num_layers=num_layers,
+            learning_rate=1e-4,
+            dropout=0.3,
+            window_length=window_length,
+            device=device,
+            skip_existing=True,
+            max_epochs=200,
+            patience=10,
+            topology="knn_hybrid_hub",
+            edge_features=True,
+            knn_k=4,
+        )
 
 def main(args):
     """
@@ -322,12 +438,25 @@ def main(args):
     #
     # Total: 12 configurations per architecture × 2 architectures = 24 models
 
+    if args.probe:
+        run_stgnn_probe(device=args.probe_device)
+        return
+    if args.knn_probe:
+        run_knn_sweep(device=args.probe_device)
+        return
+    if args.config_sweep:
+        run_config_sweep(device=args.probe_device)
+        return
+        
     lrs = [1e-4]
     model_dims = [32, 128, 512]
     num_layers = [1, 2, 4, 8]
-
-    # Create gridsearch iterable
-    gridsearch = list(product(model_dims, num_layers, lrs))
+    # Temporal models add a window-length axis (T frames of history); 0.5s..2.0s at 10Hz.
+    # Non-temporal models use window_length=1 (single frame), the original behavior.
+    window_lengths = [5, 10, 15, 20] if args.model_type in TEMPORAL_MODEL_TYPES else [1]
+    
+    # Create gridsearch iterable: (model_dim, num_layers, window_length, lr)
+    gridsearch = list(product(model_dims, num_layers, window_lengths, lrs))
     if args.shuffle:
         random.shuffle(gridsearch)
     if args.reverse:
@@ -338,7 +467,7 @@ def main(args):
         gridsearch = gridsearch[: args.hparam_search_iters]
 
     # Train models for each hyperparameter combination
-    for M, L, LR in tqdm(gridsearch, desc="Hyperparam Gridsearch"):
+    for M, L, W, LR in tqdm(gridsearch, desc="Hyperparam Gridsearch"):
         train_model(
             model_type=args.model_type,
             batch_size=256,
@@ -346,6 +475,7 @@ def main(args):
             num_layers=L,
             learning_rate=LR,
             dropout=0.3,
+            window_length=W,
             device=args.device,
             skip_existing=args.skip_existing,
             patience=args.patience,
@@ -364,8 +494,21 @@ if __name__ == "__main__":
     parser.add_argument("--shuffle", "-S", action="store_true", help="Shuffle the hyperparameter gridsearch")
     parser.add_argument("--reverse", "-R", action="store_true", help="Reverse the hyperparameter gridsearch")
     parser.add_argument(
-        "--model_type", type=str, default="transformer", help="Type of model to train ('transformer' or 'zoo')"
+        "--model_type",
+        type=str,
+        default="transformer",
+        help=(
+            "Type of model to train: 'transformer', 'zoo', or a temporal type "
+            "('windowed_transformer', 'pure_gru', 'hybrid_ts', 'hybrid_st')"
+        ),
     )
     parser.add_argument("--patience", "-P", type=int, default=10, help="Early stopping patience")
+    parser.add_argument("--probe", action="store_true", help="Run the STGNN topology probe")
+    parser.add_argument("--probe_device", type=int, default=0, help="GPU device for probe")
+    parser.add_argument("--knn_probe", action="store_true", help="run KNN topology sweep")
+    parser.add_argument("--config_sweep", action="store_true", help="Run full config sweep for knn_hybrid_hub")
+
     args = parser.parse_args()
+
+
     main(args)

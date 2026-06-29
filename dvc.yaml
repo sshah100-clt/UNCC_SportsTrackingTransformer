@@ -23,8 +23,9 @@ stages:
     - data/split_prepped_data/
 
   precompute_datasets:
-    # Pre-compute feature transforms for all splits (test: 5-10 mins, val: 5-10 mins, train: 20-30 mins per model type)
-    # Total: ~1.5 hours for both zoo and transformer datasets (6 datasets total)
+    # Pre-compute feature transforms for all splits. Builds the zoo, transformer, and
+    # the shared temporal (RAW_FEATURES) datasets. Existing pickles are skipped on rerun,
+    # so adding the temporal dataset does not rebuild zoo/transformer.
     cmd: uv run python src/datasets.py
     deps:
     - src/datasets.py
@@ -63,6 +64,59 @@ stages:
         persist: true
         cache: true
 
+  train_windowed_transformer_models:
+    # Temporal control: flatten-T per-player encoder + attention.
+    # Grid: M{32,128,512} x L{1,2,4,8} x W{5,10,15,20} = 48 configs.
+    cmd: uv run python src/train.py --model_type windowed_transformer --device 0 --skip-existing
+    deps:
+    - src/train.py
+    - src/datasets.py
+    - src/models.py
+    - data/datasets/temporal/
+    outs:
+    - models/windowed_transformer/:
+        persist: true
+        cache: true
+
+  train_pure_gru_models:
+    # Per-player GRU over time, no cross-player attention.
+    cmd: uv run python src/train.py --model_type pure_gru --device 0 --skip-existing
+    deps:
+    - src/train.py
+    - src/datasets.py
+    - src/models.py
+    - data/datasets/temporal/
+    outs:
+    - models/pure_gru/:
+        persist: true
+        cache: true
+
+  train_hybrid_ts_models:
+    # Hybrid time->space: per-player GRU encoder -> attention across players.
+    cmd: uv run python src/train.py --model_type hybrid_ts --device 0 --skip-existing
+    deps:
+    - src/train.py
+    - src/datasets.py
+    - src/models.py
+    - data/datasets/temporal/
+    outs:
+    - models/hybrid_ts/:
+        persist: true
+        cache: true
+
+  train_hybrid_st_models:
+    # Hybrid space->time: per-frame attention across players -> per-player GRU over time.
+    cmd: uv run python src/train.py --model_type hybrid_st --device 0 --skip-existing
+    deps:
+    - src/train.py
+    - src/datasets.py
+    - src/models.py
+    - data/datasets/temporal/
+    outs:
+    - models/hybrid_st/:
+        persist: true
+        cache: true
+
   pick_best_models:
     # Select best models based on validation loss (~1-2 minutes)
     cmd: uv run python src/pick_best_models.py
@@ -73,6 +127,10 @@ stages:
     - src/models.py
     - models/zoo/
     - models/transformer/
+    - models/windowed_transformer/
+    - models/pure_gru/
+    - models/hybrid_ts/
+    - models/hybrid_st/
     outs:
     - models/best_models/:
         cache: false
