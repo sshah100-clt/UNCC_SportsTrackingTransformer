@@ -1,0 +1,22 @@
+{
+  "model": "hybrid_ts",
+  "arm": "dynamics_bmi",
+  "seed": 0,
+  "feature_len": 14,
+  "added_features": [
+    "ax",
+    "ay",
+    "delta_ox",
+    "delta_oy",
+    "weight_Z",
+    "height_Z"
+  ],
+  "model_dim": 128,
+  "num_layers": 4,
+  "window": 15,
+  "params": 869182,
+  "val_loss": 2.26,
+  "test_ade": 4.1177,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/player_features/dynamics_bmi_S0/checkpoints/epoch=18-val_loss=2.260.ckpt"
+}

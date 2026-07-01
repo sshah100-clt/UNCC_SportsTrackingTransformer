@@ -1,0 +1,17 @@
+{
+  "model": "hybrid_ts",
+  "arm": "position",
+  "seed": 2,
+  "feature_len": 27,
+  "added_features": [
+    "position_onehot(19)"
+  ],
+  "model_dim": 128,
+  "num_layers": 4,
+  "window": 15,
+  "params": 874200,
+  "val_loss": 2.361,
+  "test_ade": 4.2489,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/player_features/position_S2/checkpoints/epoch=19-val_loss=2.361.ckpt"
+}

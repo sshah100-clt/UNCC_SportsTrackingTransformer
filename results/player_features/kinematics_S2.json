@@ -1,0 +1,19 @@
+{
+  "model": "hybrid_ts",
+  "arm": "kinematics",
+  "seed": 2,
+  "feature_len": 11,
+  "added_features": [
+    "s",
+    "a",
+    "dis"
+  ],
+  "model_dim": 128,
+  "num_layers": 4,
+  "window": 15,
+  "params": 868024,
+  "val_loss": 2.267,
+  "test_ade": 4.1143,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/player_features/kinematics_S2/checkpoints/epoch=20-val_loss=2.267.ckpt"
+}

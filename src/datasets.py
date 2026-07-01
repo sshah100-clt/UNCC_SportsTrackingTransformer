@@ -77,6 +77,15 @@ RAW_FEATURES = [
 ]
 RAW_FEATURE_COUNT = len(RAW_FEATURES)
 
+# Extended raw feature set for the additional-feature experiments. The first 8 channels
+# are RAW_FEATURES (identical order), so a temporal_ext window sliced [..., :8] reproduces
+# the standard temporal dataset exactly. The extra 7 channels are the per-frame features
+# the additional experiments append: engineered dynamics (ax, ay, delta_ox, delta_oy) and
+# raw kinematic scalars (s, a, dis). Built into data/datasets/temporal_ext/ via
+# build_extended_temporal.py; never used by the default pipeline.
+EXTENDED_RAW_FEATURES = RAW_FEATURES + ["ax", "ay", "delta_ox", "delta_oy", "s", "a", "dis"]
+EXTENDED_RAW_FEATURE_COUNT = len(EXTENDED_RAW_FEATURES)
+
 # Sequence model types. All consume a window of T frames, shape (T, 22, F), built
 # on RAW_FEATURES, and share a single precomputed dataset (DATASET_DIR / "temporal").
 TEMPORAL_MODEL_TYPES = ["windowed_transformer", "pure_gru", "hybrid_ts", "hybrid_st"]
@@ -104,6 +113,7 @@ class BDB2024_Dataset(Dataset):
         model_type: str,
         feature_df: pl.DataFrame,
         tgt_df: pl.DataFrame,
+        feature_list: list[str] | None = None,
     ):
         """
         Initialize the dataset.
@@ -112,6 +122,10 @@ class BDB2024_Dataset(Dataset):
             model_type (str): Type of model ('transformer' or 'zoo')
             feature_df (pl.DataFrame): DataFrame containing feature data
             tgt_df (pl.DataFrame): DataFrame containing target data
+            feature_list (list[str] | None): Optional explicit per-player feature columns,
+                overriding the model_type default. Only honored for temporal model types
+                (used to build the extended temporal dataset for the additional-feature
+                experiments). When None (default), behavior is unchanged.
 
         Raises:
             ValueError: If an invalid model_type is provided
@@ -123,8 +137,10 @@ class BDB2024_Dataset(Dataset):
         self.model_type = model_type
         # Temporal models use the raw feature set; transformer uses the engineered set; zoo builds its own grid.
         if model_type in TEMPORAL_MODEL_TYPES:
-            self.feature_list = RAW_FEATURES
-            self.feature_len = RAW_FEATURE_COUNT
+            # feature_list override lets the additional-feature experiments build a wider
+            # temporal dataset (EXTENDED_RAW_FEATURES) without changing the default path.
+            self.feature_list = feature_list if feature_list is not None else RAW_FEATURES
+            self.feature_len = len(self.feature_list)
         elif model_type == "transformer":
             self.feature_list = TRANSFORMER_FEATURES
             self.feature_len = len(TRANSFORMER_FEATURES)

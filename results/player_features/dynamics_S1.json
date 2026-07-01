@@ -1,0 +1,20 @@
+{
+  "model": "hybrid_ts",
+  "arm": "dynamics",
+  "seed": 1,
+  "feature_len": 12,
+  "added_features": [
+    "ax",
+    "ay",
+    "delta_ox",
+    "delta_oy"
+  ],
+  "model_dim": 128,
+  "num_layers": 4,
+  "window": 15,
+  "params": 868410,
+  "val_loss": 2.251,
+  "test_ade": 4.1147,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/player_features/dynamics_S1/checkpoints/epoch=27-val_loss=2.251.ckpt"
+}

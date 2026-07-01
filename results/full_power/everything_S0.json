@@ -1,0 +1,15 @@
+{
+  "model": "hybrid_ts",
+  "arm": "everything",
+  "seed": 0,
+  "feature_len": 37,
+  "game_state_dim": 18,
+  "model_dim": 128,
+  "num_layers": 4,
+  "window": 15,
+  "params": 882800,
+  "val_loss": 2.352,
+  "test_ade": 4.3135,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/full_power/everything_S0/checkpoints/epoch=15-val_loss=2.352.ckpt"
+}

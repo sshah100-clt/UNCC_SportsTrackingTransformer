@@ -1,0 +1,14 @@
+{
+  "model": "hybrid_ts",
+  "arm": "situation",
+  "seed": 1,
+  "game_state_dim": 4,
+  "model_dim": 128,
+  "num_layers": 4,
+  "window": 15,
+  "params": 871130,
+  "val_loss": 2.285,
+  "test_ade": 4.1841,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/presnap_context/situation_S1/checkpoints/epoch=27-val_loss=2.285.ckpt"
+}

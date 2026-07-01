@@ -1,0 +1,10 @@
+model,arm,seed,game_state_dim,model_dim,num_layers,window,params,val_loss,test_ade,n_test_nonmirrored
+hybrid_ts,context,0,11,128,4,15,871368,2.273,4.1367,80062
+hybrid_ts,context,1,11,128,4,15,871368,2.267,4.1772,80062
+hybrid_ts,context,2,11,128,4,15,871368,2.284,4.1425,80062
+hybrid_ts,context_downyards,0,14,128,4,15,871470,2.309,4.207,80062
+hybrid_ts,context_downyards,1,14,128,4,15,871470,2.287,4.1696,80062
+hybrid_ts,context_downyards,2,14,128,4,15,871470,2.289,4.1604,80062
+hybrid_ts,situation,0,4,128,4,15,871130,2.273,4.1312,80062
+hybrid_ts,situation,1,4,128,4,15,871130,2.285,4.1841,80062
+hybrid_ts,situation,2,4,128,4,15,871130,2.274,4.1438,80062

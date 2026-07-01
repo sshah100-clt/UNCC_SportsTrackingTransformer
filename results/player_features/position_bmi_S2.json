@@ -1,0 +1,19 @@
+{
+  "model": "hybrid_ts",
+  "arm": "position_bmi",
+  "seed": 2,
+  "feature_len": 29,
+  "added_features": [
+    "position_onehot(19)",
+    "weight_Z",
+    "height_Z"
+  ],
+  "model_dim": 128,
+  "num_layers": 4,
+  "window": 15,
+  "params": 874972,
+  "val_loss": 2.37,
+  "test_ade": 4.3085,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/player_features/position_bmi_S2/checkpoints/epoch=16-val_loss=2.370.ckpt"
+}
