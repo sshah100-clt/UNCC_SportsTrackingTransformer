@@ -1,0 +1,12 @@
+{
+  "model": "stgnn_ts_knn_hybrid_hub",
+  "arm": "on",
+  "seed": 0,
+  "window": 10,
+  "num_formations": 8,
+  "params": 1683014,
+  "val_loss": 2.245,
+  "test_ade": 4.0966,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/play_ctx_stgnn_ts_knn_hybrid_hub/on_S0/checkpoints/epoch=26-val_loss=2.245.ckpt"
+}

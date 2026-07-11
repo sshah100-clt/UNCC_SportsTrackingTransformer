@@ -1,0 +1,12 @@
+model,arm,seed,window,team_embed_dim,num_teams,params,val_loss,test_ade,n_test_nonmirrored,best_ckpt,ARI,ATL,BAL,BUF,CAR,CHI,CIN,CLE,DAL,DEN,DET,GB,HOU,IND,JAX,KC,LA,LAC,LV,MIA,MIN,NE,NO,NYG,NYJ,PHI,PIT,SEA,SF,TB,TEN,WAS
+stgnn_ts_knn_hybrid_hub,off,0,10,0,0,1660178,2.238,4.1003,80062,models/team_stgnn_ts_knn_hybrid_hub/off_S0/checkpoints/epoch=23-val_loss=2.238.ckpt,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+stgnn_ts_knn_hybrid_hub,off,1,10,0,0,1660178,2.23,4.0684,80062,models/team_stgnn_ts_knn_hybrid_hub/off_S1/checkpoints/epoch=26-val_loss=2.230.ckpt,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+stgnn_ts_knn_hybrid_hub,off,2,10,0,0,1660178,2.225,4.0778,80062,models/team_stgnn_ts_knn_hybrid_hub/off_S2/checkpoints/epoch=35-val_loss=2.225.ckpt,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+stgnn_ts_knn_hybrid_hub,off,3,10,0,0,1660178,2.253,4.0709,80062,models/team_stgnn_ts_knn_hybrid_hub/off_S3/checkpoints/epoch=20-val_loss=2.253.ckpt,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+stgnn_ts_knn_hybrid_hub,off,4,10,0,0,1660178,2.231,4.0663,80062,models/team_stgnn_ts_knn_hybrid_hub/off_S4/checkpoints/epoch=34-val_loss=2.231.ckpt,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+stgnn_ts_knn_hybrid_hub,on,0,10,16,32,1686068,2.284,4.1548,80062,models/team_stgnn_ts_knn_hybrid_hub/on_S0/checkpoints/epoch=26-val_loss=2.284.ckpt,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+stgnn_ts_knn_hybrid_hub,on,1,10,16,32,1686068,2.237,4.0892,80062,models/team_stgnn_ts_knn_hybrid_hub/on_S1/checkpoints/epoch=26-val_loss=2.237.ckpt,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+stgnn_ts_knn_hybrid_hub,on,2,10,16,32,1686068,2.269,4.1434,80062,models/team_stgnn_ts_knn_hybrid_hub/on_S2/checkpoints/epoch=21-val_loss=2.269.ckpt,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+stgnn_ts_knn_hybrid_hub,on,3,10,16,32,1686068,2.277,4.1465,80062,models/team_stgnn_ts_knn_hybrid_hub/on_S3/checkpoints/epoch=16-val_loss=2.277.ckpt,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+stgnn_ts_knn_hybrid_hub,on,4,10,16,32,1686068,2.275,4.1598,80062,models/team_stgnn_ts_knn_hybrid_hub/on_S4/checkpoints/epoch=33-val_loss=2.275.ckpt,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
