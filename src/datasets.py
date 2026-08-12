@@ -104,6 +104,7 @@ class BDB2024_Dataset(Dataset):
         model_type: str,
         feature_df: pl.DataFrame,
         tgt_df: pl.DataFrame,
+        target_type: str = "location",
     ):
         """
         Initialize the dataset.
@@ -119,8 +120,12 @@ class BDB2024_Dataset(Dataset):
         valid_types = ["transformer", "zoo"] + TEMPORAL_MODEL_TYPES
         if model_type not in valid_types:
             raise ValueError(f"model_type must be one of {valid_types}")
+        if target_type not in ("location", "tackler"):
+            raise ValueError(f"target_type must be 'location' or 'tackler', got {target_type!r}")
 
         self.model_type = model_type
+        self.target_type = target_type
+
         # Temporal models use the raw feature set; transformer uses the engineered set; zoo builds its own grid.
         if model_type in TEMPORAL_MODEL_TYPES:
             self.feature_list = RAW_FEATURES
@@ -187,8 +192,8 @@ class BDB2024_Dataset(Dataset):
         Returns:
             tuple[tuple, np.ndarray, np.ndarray]: Processed key, target array, and feature array
         """
-        tgt_array = self.transform_target_df(self.tgt_df_partition.loc[key])
         feature_array = self.transform_input_frame_df(self.feature_df_partition.loc[key])
+        tgt_array = self.transform_target_df(self.tgt_df_partition.loc[key], self.feature_df_partition.loc[key])
         return key, tgt_array, feature_array
 
     def __len__(self) -> int:
@@ -259,19 +264,14 @@ class BDB2024_Dataset(Dataset):
         # transformer and all temporal model types use the per-player (22, F) layout
         return self.transformer_transform_input_frame_df(frame_df)
 
-    def transform_target_df(self, tgt_df: pd.DataFrame) -> np.ndarray:
-        """
-        Transform target DataFrame to numpy array.
+    def transform_target_df(self, tgt_df: pd.DataFrame, frame_df: pd.DataFrame) -> np.ndarray:
+        if self.target_type == "tackler":
+            tackler_id = tgt_df["tacklerNflId"].iloc[0]
+            nfl_ids = frame_df.index.get_level_values("nflId").to_numpy()  # same row order as feature_array
+            matches = np.flatnonzero(nfl_ids == tackler_id)
+            assert len(matches) == 1, f"tackler {tackler_id} not found exactly once among {nfl_ids}"
+            return np.int64(matches[0])  # scalar class index in [0, 21]
 
-        Args:
-            tgt_df (pd.DataFrame): Target DataFrame
-
-        Returns:
-            np.ndarray: Transformed target values
-
-        Raises:
-            AssertionError: If the output shape is not as expected
-        """
         y = tgt_df[["tackle_x_rel", "tackle_y_rel"]].to_numpy(dtype=np.float32).squeeze()
         assert y.shape == (2,), f"Expected shape (2,), got {y.shape}"
         return y
@@ -372,7 +372,20 @@ class BDB2024_Dataset(Dataset):
         return x
 
 
-def load_datasets(model_type: str, split: str, window_length: int = 1) -> BDB2024_Dataset:
+def _dataset_dir(model_type: str, target_type: str = "location") -> Path:
+    """Resolve the cache directory for a given model_type/target_type combo.
+
+    All temporal model types share one raw-feature dataset per target_type
+    (location vs tackler), since the only thing that differs is which columns
+    transform_target_df pulls out of tgt_df -- the feature side is identical.
+    """
+    if model_type in TEMPORAL_MODEL_TYPES:
+        name = TEMPORAL_DATASET_NAME if target_type == "location" else f"{TEMPORAL_DATASET_NAME}_{target_type}"
+    else:
+        name = model_type if target_type == "location" else f"{model_type}_{target_type}"
+    return DATASET_DIR / name
+
+def load_datasets(model_type: str, split: str, window_length: int = 1, target_type: str = "location") -> BDB2024_Dataset:
     """
     Load datasets for a specific model type and data split.
 
@@ -390,8 +403,7 @@ def load_datasets(model_type: str, split: str, window_length: int = 1) -> BDB202
         FileNotFoundError: If the dataset file is not found
     """
     # All temporal model types share one precomputed dataset built on RAW_FEATURES.
-    ds_name = TEMPORAL_DATASET_NAME if model_type in TEMPORAL_MODEL_TYPES else model_type
-    ds_dir = DATASET_DIR / ds_name
+    ds_dir = _dataset_dir(model_type, target_type)
     file_path = ds_dir / f"{split}_dataset.pkl"
 
     if not file_path.exists():
@@ -438,6 +450,27 @@ def main():
                 pickle.dump(dataset, f)
             print(f"Took {(time.time() - tic)/60:.1f} mins")
 
+def build_tackler_datasets():
+    """Precompute the tackler-ID temporal dataset (only windowed_transformer/RAW_FEATURES,
+    shared by all TEMPORAL_MODEL_TYPES including stgnn_ts)."""
+    for split in ["test", "val", "train"]:
+        feature_df = pl.read_parquet(PREPPED_DATA_DIR / f"{split}_features_tackler.parquet")
+        tgt_df = pl.read_parquet(PREPPED_DATA_DIR / f"{split}_targets_tackler.parquet")
+
+        out_dir = _dataset_dir("windowed_transformer", target_type="tackler")
+        out_path = out_dir / f"{split}_dataset.pkl"
+        if out_path.exists():
+            print(f"Skipping existing dataset: {out_path}")
+            continue
+
+        print(f"Creating tackler dataset for split={split}...")
+        tic = time.time()
+        dataset = BDB2024_Dataset("windowed_transformer", feature_df, tgt_df, target_type="tackler")
+        out_dir.mkdir(exist_ok=True, parents=True)
+        with open(out_path, "wb") as f:
+            pickle.dump(dataset, f)
+        print(f"Took {(time.time() - tic)/60:.1f} mins")
 
 if __name__ == "__main__":
     main()
+    #build_tackler_datasets()

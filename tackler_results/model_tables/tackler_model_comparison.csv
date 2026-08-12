@@ -1,0 +1,10 @@
+model_type,model_dim,num_layers,window_length,topology,edge_features,knn_k,learning_rate,task,results_file,split,accuracy_%,top_1_accuracy_%,top_3_accuracy_%,top_5_accuracy_%,avg_confidence_in_correct_%,n
+stgnn_ts,128,8,10,knn_hybrid_hub,true,4,0.0001,tackler,stgnn_ts_M128_L8_W10_knn_hybrid_hub_K4_LR1e-04_epoch=10-val_loss=1.173.results.parquet,test,56.48,56.49,80.23,89.97,50.31999969482422,126516
+hybrid_ts,128,8,10,full,false,4,0.0001,tackler,hybrid_ts_M128_L8_W10_LR1e-04_epoch=12-val_loss=1.194.results.parquet,test,56.44,56.44,80.36,90.03,50.52000045776367,126516
+stgnn_ts,128,8,10,full,false,4,0.0001,tackler,stgnn_ts_M128_L8_W10_LR1e-04_epoch=10-val_loss=1.181.results.parquet,test,56.43,56.44,80.89,90.37,50.4900016784668,126516
+stgnn_ts,128,8,10,knn_hybrid_hub,true,4,0.0005,tackler,M128_L8_W10_knn_hybrid_hub_K4_LR5e-04_epoch=5-val_loss=1.195.results.parquet,test,55.74,55.75,79.56,89.36,49.130001068115234,126516
+stgnn_st,128,8,10,knn_hybrid_hub,true,4,0.0001,tackler,stgnn_st_M128_L8_W10_knn_hybrid_hub_K4_LR1e-04_epoch=4-val_loss=1.316.results.parquet,test,53.08,53.09,77.93,88.45,46.5,126516
+windowed_transformer,128,8,10,full,false,4,0.0001,tackler,windowed_transformer_M128_L8_W10_LR1e-04_epoch=15-val_loss=1.260.results.parquet,test,52.86,52.87,79.01,89.56,46.189998626708984,126516
+hybrid_st,128,8,10,full,false,4,0.0001,tackler,hybrid_st_M128_L8_W10_LR1e-04_epoch=4-val_loss=1.349.results.parquet,test,51.08,51.09,76.93,88.28,45.029998779296875,126516
+stgnn_ts,32,2,5,full,false,4,0.0005,tackler,stgnn_ts_M32_L2_W5_LR5e-04_epoch=1-val_loss=1.417.results.parquet,test,47.86,47.99,75.61,86.97,37.400001525878906,126516
+pure_gru,128,8,10,full,false,4,0.0001,tackler,pure_gru_M128_L8_W10_LR1e-04_epoch=46-val_loss=1.766.results.parquet,test,36.59,36.6,64.28,78.65,29.100000381469727,126516

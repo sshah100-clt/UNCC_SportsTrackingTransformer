@@ -106,36 +106,36 @@ class SportsTransformer(nn.Module):
             nn.Linear(model_dim // 4, 2),
         )
 
-    def forward(self, x: Tensor) -> Tensor:
+    def encode_players(self, x: Tensor) -> Tensor:
         """
-        Forward pass of the SportsTransformer.
-
+        Encode each of the 22 players into a contextualized embedding
         Args:
-            x (Tensor): Input tensor of shape [batch_size, num_players, feature_len].
-
+            x (Tensor): Input tensor of shape [batch_size, num_players, feature_len]
         Returns:
-            Tensor: Predicted tackle location of shape [batch_size, 2].
+            Tensor: Per-player embeddings of shape [batch_size, num_players, model_dim]
         """
         # x: [B: batch_size, P: # of players, F: feature_len]
         B, P, F = x.size()
-
         # Normalize features
-        x = self.feature_norm_layer(x.permute(0, 2, 1)).permute(0, 2, 1)  # [B,P,F] -> [B,P,F]
-
+        x = self.feature_norm_layer(x.permute(0, 2, 1)).permute(0, 2, 1)    # [B,P,F]
         # Embed features
-        x = self.feature_embedding_layer(x)  # [B,P,F] -> [B,P,M: model_dim]
-
+        x = self.feature_embedding_layer(x)     # [B,P,F] -> [B,P,M]
         # Apply transformer encoder
-        x = self.transformer_encoder(x)  # [B,P,M] -> [B,P,M]
+        return self.transformer_encoder(x)      # [B,P,M] -> [B,P,M]
 
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        Forward pass of the SportsTransformer
+        Args:
+            x (Tensor): Input tensor of shape [batch_size, num_players, feature_len]
+        Returns:
+            Tensor: Predicted tackle location of shape [batch_size, 2]
+        """
+        x = self.encode_players(x)      # [B,P,F] -> [B,P,M]
         # Pool over player dimension
-        x = squeeze(self.player_pooling_layer(x.permute(0, 2, 1)), -1)  # [B,M,P] -> [B,M]
-
+        x = squeeze(self.player_pooling_layer(x.permute(0, 2, 1)), -1)  #[B,M,P] -> [B,M]
         # Decode to predict tackle location
-        x = self.decoder(x)  # [B,M] -> [B,2]
-
-        return x
-
+        return self.decoder(x)  # [B,M] -> [B,2]
 
 class TheZooArchitecture(nn.Module):
     """
@@ -483,12 +483,27 @@ class WindowedTransformer(nn.Module):
         )
         self.hyperparams = {**self.transformer.hyperparams, "window_length": window_length}
 
+    def encode_players(self, x: Tensor) -> Tensor:
+        """
+        Encode each of the 22 players into a contextualized embedding by flattening
+        each player's T-frame window into a single token.
+
+        Args:
+            x (Tensor): Input tensor of shape [batch, T, 22, feature_len].
+
+        Returns:
+            Tensor: Per-player embeddings of shape [batch, 22, model_dim].
+        """
+        # x: [B, T, P, F] -> [B, P, T*F] (concatenate each player's frames into one token)
+        B, T, P, F = x.size()
+        x = x.permute(0, 2, 1, 3).reshape(B, P, T * F)  # [B,T,P,F] -> [B,P,T*F]
+        return self.transformer.encode_players(x)       # [B,P,T*F] -> [B,P,M]
+
     def forward(self, x: Tensor) -> Tensor:
         # x: [B, T, P, F] -> [B, P, T*F] (concatenate each player's frames into one token)
         B, T, P, F = x.size()
-        x = x.permute(0, 2, 1, 3).reshape(B, P, T * F)
-        return self.transformer(x)
-
+        x = x.permute(0, 2, 1, 3).reshape(B, P, T * F)  # [B,T,P,F] -> [B,P,T*F]
+        return self.transformer(x)  # [B,P,T*F] -> [B,2]
 
 class PureGRU(nn.Module):
     """
@@ -524,17 +539,28 @@ class PureGRU(nn.Module):
         )
         self.decoder = _build_decoder(model_dim, dropout)
 
-    def forward(self, x: Tensor) -> Tensor:
+    def encode_players(self, x: Tensor) -> Tensor:
+        """
+        Encode each of the 22 players' T-frame trajectories via a per-player GRU.
+
+        Args:
+            x (Tensor): Input tensor of shape [batch, T, 22, feature_len].
+
+        Returns:
+            Tensor: Per-player embeddings of shape [batch, 22, model_dim].
+        """
         B, T, P, F = x.size()
         # Normalize features across all (batch, time, player) positions.
-        x = self.feature_norm_layer(x.reshape(-1, F)).reshape(B, T, P, F)
+        x = self.feature_norm_layer(x.reshape(-1, F)).reshape(B, T, P, F) # [B,T,P,F] -> [B,T,P,F]
         # Per-player sequence: [B, T, P, F] -> [B, P, T, F] -> [B*P, T, F]
         x = x.permute(0, 2, 1, 3).reshape(B * P, T, F)
-        _, h_n = self.gru(x)  # h_n: [num_layers, B*P, model_dim]
-        x = h_n[-1].reshape(B, P, -1)  # last-layer hidden state per player -> [B, P, model_dim]
-        x = x.mean(dim=1)  # permutation-invariant mean-pool over players -> [B, model_dim]
-        return self.decoder(x)
+        _, h_n = self.gru(x)    # h_n: [num_layers, B*P, M]
+        return h_n[-1].reshape(B, P, -1)    # last-layer hidden state per player -> [B,M]
 
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.encode_players(x)  #[B,T,P,F] -> [B,P,M]
+        x = x.mean(dim=1)   # permutation-invariant mean-pool over players -> [B,M]
+        return self.decoder(x)  # [B,M] -> [B,2]
 
 class HybridTS(nn.Module):
     """
@@ -582,16 +608,28 @@ class HybridTS(nn.Module):
         self.player_pooling_layer = nn.AdaptiveAvgPool1d(1)
         self.decoder = _build_decoder(model_dim, dropout)
 
-    def forward(self, x: Tensor) -> Tensor:
-        B, T, P, F = x.size()
-        x = self.feature_norm_layer(x.reshape(-1, F)).reshape(B, T, P, F)
-        x = x.permute(0, 2, 1, 3).reshape(B * P, T, F)
-        _, h_n = self.gru(x)
-        x = h_n[-1].reshape(B, P, -1)  # [B, P, model_dim] trajectory embeddings
-        x = self.transformer_encoder(x)  # attention across players
-        x = squeeze(self.player_pooling_layer(x.permute(0, 2, 1)), -1)  # pool players -> [B, model_dim]
-        return self.decoder(x)
+    def encode_players(self, x: Tensor) -> Tensor:
+        """
+        Encode each player's T-frame trajectory with a GRU, then let self-attention
+        model interaction across the 22 players.
 
+        Args:
+            x (Tensor): Input tensor of shape [batch, T, 22, feature_len].
+
+        Returns:
+            Tensor: Per-player embeddings of shape [batch, 22, model_dim].
+        """
+        B, T, P, F = x.size()
+        x = self.feature_norm_layer(x.reshape(-1, F)).reshape(B, T, P, F)   # [B,T,-,F] -> [B,T,P,F]
+        x = x.permute(0, 2, 1, 3).reshape(B * P, T, F)  # [B,T,P,F] -> [B*P,T,F]
+        _, h_n = self.gru(x)
+        x = h_n[-1].reshape(B, P, -1)   # [B, P, model_dim] trajectory embeddings
+        return self.transformer_encoder(x)  # attention across players -> [B,P,M]
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.encode_players(x)  # [B,T,P,F] -> [B,P,M]
+        x = squeeze(self.player_pooling_layer(x.permute(0, 2, 1)), -1)  # pool players -> [B,M,]
+        return self.decoder(x)  # [B,M] -> [B,2]
 
 class HybridST(nn.Module):
     """
@@ -643,18 +681,31 @@ class HybridST(nn.Module):
         self.player_pooling_layer = nn.AdaptiveAvgPool1d(1)
         self.decoder = _build_decoder(model_dim, dropout)
 
-    def forward(self, x: Tensor) -> Tensor:
+    def encode_players(self, x: Tensor) -> Tensor:
+        """
+        Attend across the 22 players within each frame, then integrate each player's
+        sequence of contextualized embeddings over time with a GRU.
+
+        Args:
+            x (Tensor): Input tensor of shape [batch, T, 22, feature_len].
+
+        Returns:
+            Tensor: Per-player embeddings of shape [batch, 22, model_dim].
+        """
         B, T, P, F = x.size()
-        x = self.feature_norm_layer(x.reshape(-1, F)).reshape(B, T, P, F)
-        # Embed + attend across players within each frame (fold time into the batch dim).
-        x = self.feature_embedding_layer(x.reshape(B * T, P, F))  # [B*T, P, model_dim]
-        x = self.transformer_encoder(x)  # attention across players, per frame
-        # Per-player temporal integration: [B*T, P, M] -> [B, T, P, M] -> [B*P, T, M]
+        x = self.feature_norm_layer(x.reshape(-1, F)).reshape(B, T, P, F)   # [B,T,P,F] -> [B,T,P,F]
+        # Embed and attend across players within each frame (fold time into the batch dim)
+        x = self.feature_embedding_layer(x.reshape(B * T, P, F))    # [B*T,P,M]
+        x = self.transformer_encoder(x) # attention across players, per frame
+        # Per-player temporal integration: [B*T,P,M] -> [B,T,P,M] -> [B*P,T,M]
         x = x.reshape(B, T, P, -1).permute(0, 2, 1, 3).reshape(B * P, T, -1)
         _, h_n = self.gru(x)
-        x = h_n[-1].reshape(B, P, -1)  # [B, P, model_dim]
-        x = squeeze(self.player_pooling_layer(x.permute(0, 2, 1)), -1)  # pool players -> [B, model_dim]
-        return self.decoder(x)
+        return h_n[-1].reshape(B, P, -1)    # [B,P,M]
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.encode_players(x)  # [B,T,P,F] -> [B,P,M]
+        x = squeeze(self.player_pooling_layer(x.permute(0, 2, 1)), -1)  # pool players -> [B,M]
+        return self.decoder(x)  # [B,M] -> [B,2]
 
 class STGNN_TS(nn.Module):
     """
@@ -667,16 +718,15 @@ class STGNN_TS(nn.Module):
     """
 
     def __init__(
-        self,
-        feature_len: int,
-        model_dim: int = 128,
-        num_layers: int = 4,
-        dropout: float = 0.3,
-        window_length: int = 15,
-        topology: str = "full",
-        edge_features: bool = True,
-        knn_k: int = 8,
-    ):
+            self,
+            feature_len,
+            model_dim=128,
+            num_layers=4,
+            dropout=0.3,
+            window_length=10,
+            topology="full",
+            edge_features=True,
+            knn_k=4):
         super().__init__()
         self.window_length = window_length
         self.topology = topology
@@ -684,13 +734,9 @@ class STGNN_TS(nn.Module):
         self.knn_k = knn_k
         num_heads = min(16, max(2, 2 * round(model_dim / 64)))
         self.hyperparams = {
-            "model_dim": model_dim,
-            "num_layers": num_layers,
-            "num_heads": num_heads,
-            "window_length": window_length,
-            "topology": topology,
-            "edge_features": int(edge_features),
-            "knn_k": knn_k,
+            "model_dim": model_dim, "num_layers": num_layers, "num_heads": num_heads,
+            "window_length": window_length, "topology": topology,
+            "edge_features": int(edge_features), "knn_k": knn_k,
         }
         self.feature_norm_layer = nn.BatchNorm1d(feature_len)
         self.gru = nn.GRU(input_size=feature_len, hidden_size=model_dim, num_layers=1, batch_first=True)
@@ -699,28 +745,40 @@ class STGNN_TS(nn.Module):
         self.player_pooling_layer = nn.AdaptiveAvgPool1d(1)
         self.decoder = _build_decoder(model_dim, dropout)
 
-    def forward(self, x: Tensor) -> Tensor:
+    def encode_players(self, x: Tensor) -> Tensor:
+        """
+        Encode each player's T-frame trajectory with a GRU, then let stacked GATLayers
+        model interaction across the 22 players using a structured adjacency built from
+        the most recent frame.
+
+        Args:
+            x (Tensor): Input tensor of shape [batch, T, 22, feature_len].
+
+        Returns:
+            Tensor: Per-player embeddings of shape [batch, 22, model_dim].
+        """
         B, T, P, F = x.size()
         # Extract pos/vel/side/bc from the LAST frame for adjacency (most recent snapshot)
-        last = x[:, -1, :, :]  # [B, P, F]
+        last = x[:, -1, :, :]   # [B,P,F]
         pos, vel, side, bc = last[..., 0:2], last[..., 2:4], last[..., 6], last[..., 7]
 
-        x = self.feature_norm_layer(x.reshape(-1, F)).reshape(B, T, P, F)
+        x = self.feature_norm_layer(x.reshape(-1, F)).reshape(B, T, P, F)   # [B,T,P,F] -> [B,T,P,F]
         # GRU per player over time
         x = x.permute(0, 2, 1, 3).reshape(B * P, T, F)
         _, h_n = self.gru(x)
-        x = h_n[-1].reshape(B, P, -1)  # [B, P, model_dim]
+        x = h_n[-1].reshape(B, P, -1)   # [B,P,M]
 
         # Build adjacency and edge features once from the last frame
         adj = build_adjacency_torch(side, bc, pos, self.knn_k, self.topology)
         edge_feats = edge_features_torch(pos, vel) if self.use_edge_features else None
-
         for layer in self.gat_layers:
-            x = layer(x, adj, edge_feats)
+            x = layer(x, adj, edge_feats)   # [B,P,M]
+        return x
 
-        x = squeeze(self.player_pooling_layer(x.permute(0, 2, 1)), -1)  # [B, model_dim]
-        return self.decoder(x)
-
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.encode_players(x)  #[B,T,P,F] -> [B,P,M]
+        x = squeeze(self.player_pooling_layer(x.permute(0, 2, 1)), -1)  # [B,M]
+        return self.decoder(x)  # [B,M] -> [B,2]
 
 class STGNN_ST(nn.Module):
     """
@@ -729,7 +787,8 @@ class STGNN_ST(nn.Module):
     player's sequence of contextualized embeddings over time.
     Drop-in replacement for HybridST with GATLayer in place of plain TransformerEncoder.
 
-    Input: [batch, T, 22, feature_len] -> [batch, 2]
+    location: [batch, T, 22, feature_len] -> [batch, 2]
+    tackler: [batch, T, 22, feature_len] -> [batch, 22]
     """
 
     def __init__(
@@ -738,10 +797,10 @@ class STGNN_ST(nn.Module):
         model_dim: int = 128,
         num_layers: int = 4,
         dropout: float = 0.3,
-        window_length: int = 15,
+        window_length: int = 10,
         topology: str = "full",
         edge_features: bool = True,
-        knn_k: int = 8,
+        knn_k: int = 4,
     ):
         super().__init__()
         self.window_length = window_length
@@ -771,32 +830,30 @@ class STGNN_ST(nn.Module):
         self.player_pooling_layer = nn.AdaptiveAvgPool1d(1)
         self.decoder = _build_decoder(model_dim, dropout)
 
-    def forward(self, x: Tensor) -> Tensor:
+    def encode_players(self, x: Tensor) -> Tensor:
         B, T, P, F = x.size()
+        x = self.feature_norm_layer(x.reshape(-1, F)).reshape(B, T, P, F)   # [B,T,P,F] -> [B,T,P,F]
 
-        x = self.feature_norm_layer(x.reshape(-1, F)).reshape(B, T, P, F)
-
-        # Build adjacency per frame — fold time into batch, extract pos/vel/side/bc
+        # Build adjacency per frame - fold time into batch, extract pos/velo/side/bc
         x_flat = x.reshape(B * T, P, F)
-        pos  = x_flat[..., 0:2]
-        vel  = x_flat[..., 2:4]
-        side = x_flat[..., 6]
-        bc   = x_flat[..., 7]
-        adj = build_adjacency_torch(side, bc, pos, self.knn_k, self.topology)  # [B*T, P, P]
+        pos, vel, side, bc = x_flat[..., 0:2], x_flat[..., 2:4], x_flat[..., 6], x_flat[..., 7]
+        adj = build_adjacency_torch(side, bc, pos, self.knn_k, self.topology) # [B*T,P,P]
         edge_feats = edge_features_torch(pos, vel) if self.use_edge_features else None
 
-        # Embed then GAT across players at each frame
-        h = self.feature_embedding_layer(x_flat)  # [B*T, P, model_dim]
+        # Embed tehn GAT across players at each frame
+        h = self.feature_embedding_layer(x_flat)    # [B*T,P,M]
         for layer in self.gat_layers:
             h = layer(h, adj, edge_feats)
 
         # Per-player temporal integration
         h = h.reshape(B, T, P, -1).permute(0, 2, 1, 3).reshape(B * P, T, -1)
         _, h_n = self.gru(h)
-        h = h_n[-1].reshape(B, P, -1)  # [B, P, model_dim]
-        h = squeeze(self.player_pooling_layer(h.permute(0, 2, 1)), -1)  # [B, model_dim]
-        return self.decoder(h)
-    
+        return h_n[-1].reshape(B, P, -1)    # [B,P,M]
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.encode_players(x)  # [B,T,P,F] -> [B,P,M]
+        x = squeeze(self.player_pooling_layer(x.permute(0, 2, 1)), -1)  # [B,M]
+        return self.decoder(x)    # [B,M] -> [B,2]
 
 class GraphModel(nn.Module):
     """GNN over the 22 players for single-frame tackle prediction.
@@ -856,6 +913,9 @@ class LitModel(LightningModule):
     Lightning module for training and evaluating tackle prediction models.
     """
 
+    STGNN_TYPES = {"stgnn_ts", "stgnn_st"}
+    NO_TACKLER_SUPPORT = {"zoo"} # no per-player representation to mask/score
+
     def __init__(
         self,
         model_type: str,
@@ -868,7 +928,8 @@ class LitModel(LightningModule):
         window_length: int = 1,
         topology: str= "full",
         edge_features: bool = True,
-        knn_k: int = 4
+        knn_k: int = 4,
+        task: str = "location",
     ):
         """
         Initialize the LitModel.
@@ -883,9 +944,19 @@ class LitModel(LightningModule):
             dropout (float): Dropout rate for regularization.
             learning_rate (float): Learning rate for the optimizer.
             window_length (int): Temporal window length T (temporal models only).
+            task (str): 'location' (regress x,y) or 'tackler' (classify which player makes the tackle).
+                Tackler prediction handled entirely in LitModel via a shared head.
         """
         super().__init__()
         self.model_type = model_type.lower()
+        self.task = task
+
+        if self.task == "tackler" and self.model_type in self.NO_TACKLER_SUPPORT:
+            raise ValueError(
+                f"Model_type={self.model_type!r} has no per-player representation "
+                f"(encode_players) and connot support task='tackler'."
+            )
+
         model_classes = {
             "transformer": SportsTransformer,
             "zoo": TheZooArchitecture,
@@ -902,6 +973,7 @@ class LitModel(LightningModule):
         self.is_temporal = self.model_type in TEMPORAL_MODEL_TYPES
 
         # Initialize model with architecture-specific parameters
+        # Model classes are task-agnostic = none of them take a 'task' arg
         STGNN_TYPES = ["stgnn_ts", "stgnn_st"]
         if self.is_temporal:
             if self.model_type in STGNN_TYPES:
@@ -913,31 +985,75 @@ class LitModel(LightningModule):
                     window_length=window_length,
                     topology=topology,
                     edge_features=edge_features,
-                    knn_k=knn_k
+                    knn_k=knn_k,
                 )
-                self.example_input_array = torch.randn((batch_size, window_length, 22, self.feature_len))
             else:
                 self.model = self.model_class(
                     feature_len=self.feature_len,
                     model_dim=model_dim,
                     num_layers=num_layers,
                     dropout=dropout,
+                    window_length=window_length
                 )
-                self.example_input_array = (
-                    torch.randn((batch_size, 22, self.feature_len))
-                    if self.model_type == "transformer"
-                    else torch.randn((batch_size, 10, 11, self.feature_len))
-                )
+            self.example_input_array = torch.randn((batch_size, window_length, 22, self.feature_len))
+        else:
+            self.model = self.model_class(
+                feature_len=self.feature_len,
+                model_dim=model_dim,
+                num_layers=num_layers,
+                dropout=dropout,
+            )
+            self.example_input_array = (
+                torch.randn((batch_size, 22, self.feature_len))
+                if self.model_type == "transformer"
+                else torch.randn((batch_size, 10, 11, self.feature_len))
+            )
 
+        # Shared tackler head - where tackler vs location logic lives
+        if self.task == "tackler":
+            self.tackler_head = nn.Sequential(
+                nn.Linear(model_dim, model_dim // 2),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.LayerNorm(model_dim // 2),
+                nn.Linear(model_dim // 2, 1)
+            )
         self.learning_rate = learning_rate
         self.num_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        if self.task == "tackler":
+            self.num_params += sum(p.numel() for p in self.tackler_head.parameters() if p.requires_grad)
         self.hparams["params"] = self.num_params
         for k, v in self.model.hyperparams.items():
             self.hparams[k] = v
 
         self.save_hyperparameters()
-        self.loss_fn = torch.nn.SmoothL1Loss()
+        # CrossEntropyLoss for classification, Smooth1Loss for regression
+        self.loss_fn = nn.CrossEntropyLoss() if self.task == "tackler" else torch.nn.SmoothL1Loss()
 
+    def predict_tackler(self, x: Tensor) -> Tensor:
+        """
+        Predict which of the 22 players makes the tackle.
+
+        Uses the model's per-player embeddings (via `encode_players`) and masks out
+        offensive players (side > 0) so only defenders are scored.
+
+        Args:
+            x (Tensor): Input tensor, shape [B, T, 22, feature_len] for temporal models
+                or [B, 22, feature_len] for single-frame models.
+
+        Returns:
+            Tensor: Logits of shape [B, 22], with offensive players masked to -inf.
+        """
+        players = self.model.encode_players(x) # [B, 22, model_dim]
+
+        if self.is_temporal:
+            side = x[:, -1, :, 6] # side from the most recent frame
+        else:
+            side = x[..., 6]
+
+        logits = self.tackler_head(players).squeeze(-1) # [B, 22]
+        return logits.masked_fill(side > 0, float("-inf"))
+    
     def forward(self, x: Tensor) -> Tensor:
         """
         Forward pass of the model.
@@ -946,8 +1062,11 @@ class LitModel(LightningModule):
             x (Tensor): Input tensor.
 
         Returns:
-            Tensor: Output tensor.
+            Location: Tensor: Output tensor - [B, 2]
+            Tackler: Tensor: Output tensor - [B, 22]
         """
+        if self.task == "tackler":
+            return self.predict_tackler(x)
         return self.model(x)
 
     def training_step(self, batch: tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
@@ -962,9 +1081,12 @@ class LitModel(LightningModule):
             Tensor: Computed loss for the batch.
         """
         x, y = batch
-        y_hat = self.model(x)
+        y_hat = self(x)
         loss = self.loss_fn(y_hat, y)
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
+        if self.task == "tackler":
+            acc = (y_hat.argmax(-1) == y).float().mean()
+            self.log("train_acc", acc, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
         return loss
 
     def validation_step(self, batch: tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
@@ -979,9 +1101,12 @@ class LitModel(LightningModule):
             Tensor: Computed loss.
         """
         x, y = batch
-        y_hat = self.model(x)
+        y_hat = self(x)
         loss = self.loss_fn(y_hat, y)
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
+        if self.task == "tackler":
+            acc = (y_hat.argmax(-1) == y).float().mean()
+            self.log("val_acc", acc, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
         return loss
 
     def test_step(self, batch: tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
@@ -996,7 +1121,7 @@ class LitModel(LightningModule):
             Tensor: Computed loss.
         """
         x, y = batch
-        y_hat = self.model(x)
+        y_hat = self(x)
         loss = self.loss_fn(y_hat, y)
         return loss
 
@@ -1013,7 +1138,7 @@ class LitModel(LightningModule):
             Tensor: Predicted output tensor.
         """
         x, y = batch
-        y_hat = self.model(x)
+        y_hat = self(x)
         return y_hat
 
     def configure_optimizers(self) -> AdamW:

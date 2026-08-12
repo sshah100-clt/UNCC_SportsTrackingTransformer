@@ -34,6 +34,7 @@ Functions:
     augment_mirror_tracking: Augment data by mirroring the field
     add_relative_positions: Add relative position features
     get_tackle_loc_target_df: Generate target dataframe for tackle location prediction
+    get_tackler_target_df: Generate tackler identity prediction
     split_train_test_val: Split data into train, validation, and test sets
     main: Main execution function
 
@@ -323,6 +324,31 @@ def get_tackle_loc_target_df(tracking_df: pl.DataFrame) -> tuple[pl.DataFrame, p
     new_play_count = len(tracking_df.select(["gameId", "playId"]).unique())
     print(f"Lost {(og_play_count - new_play_count) / og_play_count:.3%} plays when joining with tackle_loc_df")
     return tackle_loc_df, tracking_df
+
+def get_tackler_target_df(tracking_df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Generate per-play tackler identity target.
+
+    Uses tackles.csv: one row per (gameId, playId, nflId) with tackle/assist/
+    pff_missedTackle flags. We take the primary tackler (tackle == 1); plays with
+    no primary tackler (e.g. only assists recorded, or the ballcarrier ran out of
+    bounds/scored) are dropped — you may want a separate "no-tackle" class instead,
+    see note below.
+    """
+    tackles_df = pl.read_csv(INPUT_DATA_DIR / "tackles.csv")
+
+    primary_tackler_df = (
+        tackles_df.filter(pl.col("tackle") == 1)
+        .select(["gameId", "playId", "nflId"])
+        .rename({"nflId": "tacklerNflId"})
+        .unique(subset=["gameId", "playId"], keep="first")
+    )
+
+    # mirrored is a play-level augmentation flag, doesn't change identity -> cross join
+    mirror_flags = tracking_df.select("mirrored").unique()
+    tackler_target_df = primary_tackler_df.join(mirror_flags, how="cross")
+
+    return tackler_target_df
 
 
 def split_train_test_val(tracking_df: pl.DataFrame, target_df: pl.DataFrame) -> dict[str, pl.DataFrame]:
