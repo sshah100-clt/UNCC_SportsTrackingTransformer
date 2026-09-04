@@ -1,0 +1,15 @@
+{
+  "topology": "knn_opponent",
+  "k": 3,
+  "edge_features": 1,
+  "seed": 1,
+  "model_dim": 128,
+  "num_layers": 4,
+  "window": 15,
+  "ordering": "ts",
+  "params": 866978,
+  "val_loss": 2.257,
+  "test_ade": 4.1241,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/graph_knn/knn_opponent_k3_S1/checkpoints/epoch=40-val_loss=2.257.ckpt"
+}

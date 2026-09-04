@@ -14,3 +14,18 @@ src/sandbox.ipynb
 # data (managed by DVC)
 /data/*
 !/data/.gitkeep
+
+# paper drafts, decks, reference PDFs, agent scratch (not part of the code release)
+/CMUSA - Draft/
+/relevant papers/
+/original sports transformer paper/
+/ppts/
+/Reports/
+/figures/scripts/__pycache__/
+*.docx
+~$*
+.DS_Store
+.claude/
+HANDOVER.md
+DATASETS.md
+modal_app.py

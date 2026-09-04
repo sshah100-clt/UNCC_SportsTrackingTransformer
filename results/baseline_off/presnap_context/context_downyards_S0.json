@@ -1,0 +1,14 @@
+{
+  "model": "hybrid_ts",
+  "arm": "context_downyards",
+  "seed": 0,
+  "game_state_dim": 14,
+  "model_dim": 128,
+  "num_layers": 4,
+  "window": 15,
+  "params": 871470,
+  "val_loss": 2.309,
+  "test_ade": 4.207,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/presnap_context/context_downyards_S0/checkpoints/epoch=25-val_loss=2.309.ckpt"
+}

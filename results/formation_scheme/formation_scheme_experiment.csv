@@ -1,0 +1,13 @@
+mean,std,EMPTY,I_FORM,JUMBO,PISTOL,SHOTGUN,SINGLEBACK,UNK,WILDCAT,model,arm,seed,window,team_embed_dim,num_teams,params,val_loss,test_ade,n_test_nonmirrored,best_ckpt,num_formations
+6.419883174894055,1.012675014548255,,,,,,,,,,,,,,,,,,,,
+,,1,2,3,4,5,6,0,7,,,,,,,,,,,,
+,,,,,,,,,,stgnn_ts_knn_hybrid_hub,off,0,10,0,0,1660178,2.238,4.1003,80062,models/team_stgnn_ts_knn_hybrid_hub/off_S0/checkpoints/epoch=23-val_loss=2.238.ckpt,
+,,,,,,,,,,stgnn_ts_knn_hybrid_hub,off,1,10,0,0,1660178,2.23,4.0684,80062,models/team_stgnn_ts_knn_hybrid_hub/off_S1/checkpoints/epoch=26-val_loss=2.230.ckpt,
+,,,,,,,,,,stgnn_ts_knn_hybrid_hub,off,2,10,0,0,1660178,2.225,4.0778,80062,models/team_stgnn_ts_knn_hybrid_hub/off_S2/checkpoints/epoch=35-val_loss=2.225.ckpt,
+,,,,,,,,,,stgnn_ts_knn_hybrid_hub,off,3,10,0,0,1660178,2.253,4.0709,80062,models/team_stgnn_ts_knn_hybrid_hub/off_S3/checkpoints/epoch=20-val_loss=2.253.ckpt,
+,,,,,,,,,,stgnn_ts_knn_hybrid_hub,off,4,10,0,0,1660178,2.231,4.0663,80062,models/team_stgnn_ts_knn_hybrid_hub/off_S4/checkpoints/epoch=34-val_loss=2.231.ckpt,
+,,,,,,,,,,stgnn_ts_knn_hybrid_hub,on,0,10,,,1683014,2.245,4.0966,80062,models/play_ctx_stgnn_ts_knn_hybrid_hub/on_S0/checkpoints/epoch=26-val_loss=2.245.ckpt,8
+,,,,,,,,,,stgnn_ts_knn_hybrid_hub,on,1,10,,,1683014,2.222,4.0435,80062,models/play_ctx_stgnn_ts_knn_hybrid_hub/on_S1/checkpoints/epoch=31-val_loss=2.222.ckpt,8
+,,,,,,,,,,stgnn_ts_knn_hybrid_hub,on,2,10,,,1683014,2.231,4.0784,80062,models/play_ctx_stgnn_ts_knn_hybrid_hub/on_S2/checkpoints/epoch=23-val_loss=2.231.ckpt,8
+,,,,,,,,,,stgnn_ts_knn_hybrid_hub,on,3,10,,,1683014,2.236,4.0938,80062,models/play_ctx_stgnn_ts_knn_hybrid_hub/on_S3/checkpoints/epoch=25-val_loss=2.236.ckpt,8
+,,,,,,,,,,stgnn_ts_knn_hybrid_hub,on,4,10,,,1683014,2.222,4.1042,80062,models/play_ctx_stgnn_ts_knn_hybrid_hub/on_S4/checkpoints/epoch=27-val_loss=2.222.ckpt,8

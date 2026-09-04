@@ -1,0 +1,14 @@
+{
+  "model": "transformer",
+  "arm": "off",
+  "seed": 1,
+  "model_dim": 128,
+  "num_layers": 2,
+  "window": 1,
+  "game_state_features": [],
+  "params": 418738,
+  "val_loss": 2.553,
+  "test_ade": 4.6111,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/gamestate_transformer/off_S1/checkpoints/epoch=37-val_loss=2.553.ckpt"
+}

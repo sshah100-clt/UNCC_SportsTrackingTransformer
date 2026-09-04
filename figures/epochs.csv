@@ -1,0 +1,12 @@
+arm,label,cat,n,epoch,ade
+position_bmi,Position + BMI,identity,3,14.666666666666666,4.316366666666666
+everything,All 55 channels,identity,3,14.666666666666666,4.308866666666667
+position,Position,identity,3,16.666666666666668,4.272966666666666
+dynamics_bmi,Dynamics + BMI,motion,3,18.0,4.1174
+context_downyards,Context + down/yds,situation,3,20.333333333333332,4.178999999999999
+kinematics,Kinematics,motion,3,21.333333333333332,4.1177
+context,Pre-snap context,situation,3,22.333333333333332,4.152133333333334
+dynamics,Motion dynamics,motion,3,22.666666666666668,4.1055
+situation,Score + win prob,situation,3,28.666666666666668,4.153033333333333
+off,Baseline (8 raw),baseline,3,29.0,4.147866666666666
+age,Age,identity,3,30.0,4.145533333333334

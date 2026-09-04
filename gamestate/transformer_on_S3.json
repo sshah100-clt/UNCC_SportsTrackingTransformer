@@ -1,0 +1,18 @@
+{
+  "model": "transformer",
+  "arm": "on",
+  "seed": 3,
+  "model_dim": 128,
+  "num_layers": 2,
+  "window": 1,
+  "game_state_features": [
+    "down",
+    "yardsToGo",
+    "distanceToGoal"
+  ],
+  "params": 422968,
+  "val_loss": 2.525,
+  "test_ade": 4.5673,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/gamestate_transformer/on_S3/checkpoints/epoch=57-val_loss=2.525.ckpt"
+}

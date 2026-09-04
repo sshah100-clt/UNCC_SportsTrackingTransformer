@@ -1,0 +1,15 @@
+{
+  "model": "hybrid_ts",
+  "arm": "off",
+  "seed": 0,
+  "feature_len": 8,
+  "added_features": [],
+  "model_dim": 128,
+  "num_layers": 4,
+  "window": 15,
+  "params": 866866,
+  "val_loss": 2.283,
+  "test_ade": 4.1285,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/player_features/off_S0/checkpoints/epoch=20-val_loss=2.283.ckpt"
+}

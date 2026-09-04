@@ -1,0 +1,15 @@
+{
+  "topology": "full",
+  "k": 5,
+  "edge_features": 1,
+  "seed": 4,
+  "model_dim": 128,
+  "num_layers": 4,
+  "window": 15,
+  "ordering": "ts",
+  "params": 866978,
+  "val_loss": 2.243,
+  "test_ade": 4.0995,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/graph_knn/full_k5_S4/checkpoints/epoch=30-val_loss=2.243.ckpt"
+}

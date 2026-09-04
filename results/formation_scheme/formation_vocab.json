@@ -1,0 +1,10 @@
+{
+  "EMPTY": 1,
+  "I_FORM": 2,
+  "JUMBO": 3,
+  "PISTOL": 4,
+  "SHOTGUN": 5,
+  "SINGLEBACK": 6,
+  "UNK": 0,
+  "WILDCAT": 7
+}

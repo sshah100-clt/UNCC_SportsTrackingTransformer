@@ -1,0 +1,13 @@
+{
+  "model": "stgnn_ts_knn_hybrid_hub",
+  "arm": "on",
+  "seed": 4,
+  "window": 10,
+  "team_embed_dim": 16,
+  "num_teams": 32,
+  "params": 1686068,
+  "val_loss": 2.275,
+  "test_ade": 4.1598,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/team_stgnn_ts_knn_hybrid_hub/on_S4/checkpoints/epoch=33-val_loss=2.275.ckpt"
+}

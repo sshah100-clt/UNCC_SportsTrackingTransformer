@@ -1,0 +1,15 @@
+{
+  "model": "transformer",
+  "arm": "off",
+  "seed": 2,
+  "feature_len": 8,
+  "physical_features": [],
+  "model_dim": 128,
+  "num_layers": 2,
+  "window": 1,
+  "params": 418738,
+  "val_loss": 2.532,
+  "test_ade": 4.583,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/physical_transformer/off_S2/checkpoints/epoch=40-val_loss=2.532.ckpt"
+}

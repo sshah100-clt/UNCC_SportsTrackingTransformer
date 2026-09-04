@@ -1,0 +1,14 @@
+{
+  "model": "hybrid_ts",
+  "arm": "off",
+  "seed": 3,
+  "model_dim": 128,
+  "num_layers": 4,
+  "window": 15,
+  "game_state_features": [],
+  "params": 866866,
+  "val_loss": 2.256,
+  "test_ade": 4.1037,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/gamestate_hybrid_ts/off_S3/checkpoints/epoch=36-val_loss=2.256.ckpt"
+}

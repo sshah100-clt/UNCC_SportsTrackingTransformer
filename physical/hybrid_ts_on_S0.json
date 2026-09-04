@@ -1,0 +1,18 @@
+{
+  "model": "hybrid_ts",
+  "arm": "on",
+  "seed": 0,
+  "feature_len": 10,
+  "physical_features": [
+    "weight_Z",
+    "height_Z"
+  ],
+  "model_dim": 128,
+  "num_layers": 4,
+  "window": 15,
+  "params": 867638,
+  "val_loss": 2.293,
+  "test_ade": 4.151,
+  "n_test_nonmirrored": 80062,
+  "best_ckpt": "models/physical_hybrid_ts/on_S0/checkpoints/epoch=22-val_loss=2.293.ckpt"
+}
