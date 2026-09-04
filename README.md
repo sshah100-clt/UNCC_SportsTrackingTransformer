@@ -24,7 +24,16 @@ code that actually produced it.
 
 They are not interchangeable: `src_stgnn/models.py` defines the winning
 `knn_hybrid_hub` topology, which `src/models.py` does not, and the STGNN class
-was renamed between them. Run each tree from its own directory.
+was renamed between them.
+
+**Run every script from the repository root.** All paths in both trees are
+resolved relative to the working directory (`data/`, `results/`, `models/`),
+so invoking a script from inside `src/` or `src_stgnn/` will fail.
+
+Both trees write checkpoints to `models/<model_type>/`. The type names do not
+overlap between them (`hybrid_ts` etc. vs `stgnn_ts`/`stgnn_st`), so they
+coexist; do not pass a `src/` model type to `src_stgnn/train.py` or the runs
+will land in the same directory under different definitions.
 
 ## Paper to artifact map
 
@@ -81,13 +90,23 @@ Standalone ablations are run directly; the map above gives the script for each
 arm. Figures and statistics are rebuilt with:
 
 ```bash
-uv run python figures/scripts/cache_baselines.py    # naive baselines
+uv run python figures/scripts/cache_baselines.py    # naive baselines (needs data/, built by dvc repro)
 uv run python figures/scripts/build_stats.py        # paired tests, BH correction
 uv run python figures/scripts/epochs.py             # stopping-epoch analysis
 uv run python figures/scripts/make_figures.py       # all figures
 ```
 
 Monitor training with `uv run tensorboard --logdir models/`.
+
+`build_stats.py`, `epochs.py` and `make_figures.py` read only the result files
+committed here and run without the raw data; `cache_baselines.py` needs the
+prepared tracking data.
+
+Note on output locations: the ablation scripts write their summary CSVs under
+`results/`, while the three shipped at the repository root
+(`graph_knn_experiment.csv`, `gamestate_experiment.csv`,
+`physical_experiment.csv`) are the copies `build_stats.py` reads. If you re-run
+those arms, copy the regenerated CSVs to the root before rebuilding the stats.
 
 Training recipe is identical across every experiment: AdamW, lr 1e-4, batch 256,
 dropout 0.3, SmoothL1Loss, early stopping patience 10, max 200 epochs.

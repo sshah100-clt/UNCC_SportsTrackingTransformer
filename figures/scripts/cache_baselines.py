@@ -1,8 +1,7 @@
 import numpy as np, polars as pl, sys
-sys.path.insert(0, "/private/tmp/claude-501/-Users-skshah-SportsTrackingTransformer/03eec3b4-29b0-41d0-8b38-ee2c890c362d/scratchpad")
 from naive_baselines import ball_carrier_frames, fit_global_dt, add_buckets, ade, FPS
 
-S = "/private/tmp/claude-501/-Users-skshah-SportsTrackingTransformer/03eec3b4-29b0-41d0-8b38-ee2c890c362d/scratchpad"
+S = "figures"
 train, test = ball_carrier_frames("train"), ball_carrier_frames("test")
 dt = fit_global_dt(train)
 dtc = (pl.col("tackle_frameId") - pl.col("frameId")) / FPS

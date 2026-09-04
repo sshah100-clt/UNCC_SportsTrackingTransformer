@@ -17,7 +17,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-S = "/private/tmp/claude-501/-Users-skshah-SportsTrackingTransformer/03eec3b4-29b0-41d0-8b38-ee2c890c362d/scratchpad"
+S = "figures"
 OUT = "figures"
 
 mpl.rcParams.update({
@@ -377,8 +377,8 @@ NICE = {"knn_hybrid_hub": "k-NN hybrid + hub", "knn_hub": "k-NN opponent + hub",
 
 
 def fig6():
-    top = pl.read_csv(f"{S}/stgnn_topology_results.csv")
-    knn = pl.read_csv(f"{S}/topology_knn_sweep.csv")
+    top = pl.read_csv("topology_results/stgnn_topology_results.csv")
+    knn = pl.read_csv("topology_results/topology_knn_sweep.csv")
     opp = (pl.read_csv(f"{S}/ablation_stats.csv").filter(pl.col("cat") == "graph"))
 
     fig, axes = plt.subplots(1, 3, figsize=(7.4, 3.5),

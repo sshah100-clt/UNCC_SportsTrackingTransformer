@@ -3,7 +3,7 @@ import json, re, glob
 import numpy as np, polars as pl
 from scipy import stats
 
-S = "/private/tmp/claude-501/-Users-skshah-SportsTrackingTransformer/03eec3b4-29b0-41d0-8b38-ee2c890c362d/scratchpad"
+S = "figures"
 
 
 def ep(ck):
@@ -74,8 +74,8 @@ for k in [2, 3, 5, 8]:
                        [ep(c) for c in s["best_ckpt"]]))
 
 # ---- Bennett: team identity + formation on STGNN ----
-for f, lbl, cat in [(f"{S}/team_experiment.csv", "Team identity (16d)", "identity"),
-                    (f"{S}/formation_experiment.csv", "Formation + box", "situation")]:
+for f, lbl, cat in [("results/team_scheme/team_experiment.csv", "Team identity (16d)", "identity"),
+                    ("results/formation_scheme/formation_scheme_experiment.csv", "Formation + box", "situation")]:
     d = pl.read_csv(f, infer_schema_length=0).filter(pl.col("model").is_not_null())
     d = d.with_columns(pl.col("test_ade").cast(float), pl.col("seed").cast(int))
     o = d.filter(pl.col("arm") == "off").sort("seed")

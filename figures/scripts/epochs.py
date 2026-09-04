@@ -1,6 +1,6 @@
 """Mean best-epoch and test ADE for the eleven arms sharing the 3-seed baseline."""
 import glob, json, re, numpy as np, polars as pl
-S = "/private/tmp/claude-501/-Users-skshah-SportsTrackingTransformer/03eec3b4-29b0-41d0-8b38-ee2c890c362d/scratchpad"
+S = "figures"
 def ep(c): 
     m = re.search(r"epoch=(\d+)", str(c)); return int(m.group(1)) if m else np.nan
 LBL = {"off": ("Baseline (8 raw)", "baseline"), "dynamics": ("Motion dynamics", "motion"),
